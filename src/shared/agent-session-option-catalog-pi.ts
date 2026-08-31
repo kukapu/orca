@@ -5,6 +5,7 @@ import type {
   CatalogModel,
   CatalogOption
 } from './agent-session-option-catalog-types'
+import { PI_THINKING_LEVELS, parsePiModelTableRow } from './pi-model-list-probe'
 
 const PI_THINKING: CatalogOption = {
   id: 'effort',
@@ -12,15 +13,10 @@ const PI_THINKING: CatalogOption = {
   category: 'thought_level',
   kind: {
     type: 'select',
-    choices: [
-      { value: 'off', label: 'Off' },
-      { value: 'minimal', label: 'Minimal' },
-      { value: 'low', label: 'Low' },
-      { value: 'medium', label: 'Medium' },
-      { value: 'high', label: 'High' },
-      { value: 'xhigh', label: 'Extra high' },
-      { value: 'max', label: 'Max' }
-    ],
+    choices: PI_THINKING_LEVELS.map((level) => ({
+      value: level.id,
+      label: level.label
+    })),
     defaultValue: 'medium'
   },
   apply: {
@@ -33,20 +29,11 @@ const PI_THINKING: CatalogOption = {
 function parsePiModels(stdout: string): CatalogModel[] {
   const seen = new Set<string>()
   return stdout.split(/\r?\n/).flatMap((line) => {
-    const trimmed = line.trim()
-    if (
-      !trimmed ||
-      /^provider\s+model\b/i.test(trimmed) ||
-      /^no models\b/i.test(trimmed) ||
-      /^warning:/i.test(trimmed)
-    ) {
+    const row = parsePiModelTableRow(line)
+    if (!row) {
       return []
     }
-    const match = trimmed.match(/^([a-z0-9][a-z0-9._-]*)\s+([a-z0-9][a-z0-9._:-]*)(?:\s|$)/i)
-    if (!match) {
-      return []
-    }
-    const id = `${match[1]}/${match[2]}`
+    const id = `${row.provider}/${row.model}`
     if (seen.has(id)) {
       return []
     }

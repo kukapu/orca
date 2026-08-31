@@ -130,6 +130,7 @@ describe('agent session option catalog', () => {
         'ollama    llama3.1:8b   128K     8K       no        no',
         'google    gemini-3-pro  1M       64K      yes       yes',
         'No models available. Use /login to log into a provider via OAuth or API key.',
+        'See the docs for more information about listing models here',
         'noise'
       ].join('\n')
     )
