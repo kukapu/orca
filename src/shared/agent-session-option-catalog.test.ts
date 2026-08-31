@@ -131,12 +131,13 @@ describe('agent session option catalog', () => {
   it('discovers OpenCode provider models and maps the selected model', () => {
     const catalog = getAgentSessionOptionCatalog('opencode')!
     const parsed = catalog.listModels!.parse(
-      'xai/grok-4.6\nzai-coding-plan/glm-5.3\nalibaba-token-plan/MiniMax-M2.5\nnoise\nxai/grok-4.6\n'
+      'xai/grok-4.6\nzai-coding-plan/glm-5.3\nalibaba-token-plan/MiniMax-M2.5\ncloudflare-workers-ai/@cf/meta/llama-3.1-8b-instruct\nnoise\n/leading\ntrailing/\nxai/grok-4.6\n'
     )
     expect(parsed.map(({ id }) => id)).toEqual([
       'xai/grok-4.6',
       'zai-coding-plan/glm-5.3',
-      'alibaba-token-plan/MiniMax-M2.5'
+      'alibaba-token-plan/MiniMax-M2.5',
+      'cloudflare-workers-ai/@cf/meta/llama-3.1-8b-instruct'
     ])
     expect(
       resolveAgentSessionOptionLaunch('opencode', {

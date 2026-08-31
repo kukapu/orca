@@ -6,7 +6,9 @@ function parseOpenCodeModels(stdout: string): CatalogModel[] {
   const seen = new Set<string>()
   return stdout.split(/\r?\n/).flatMap((line) => {
     const id = line.trim()
-    if (!/^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/i.test(id) || seen.has(id)) {
+    const slash = id.indexOf('/')
+    // Why: OpenCode splits on the first `/`; model_id may contain `/` and `@`.
+    if (slash <= 0 || slash === id.length - 1 || /\s/.test(id) || seen.has(id)) {
       return []
     }
     seen.add(id)
