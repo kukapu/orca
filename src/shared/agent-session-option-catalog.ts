@@ -10,6 +10,7 @@ import {
 } from './agent-session-option-catalog-gemini-cursor'
 import { GROK_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-grok'
 import { OPENCODE_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-opencode'
+import { PI_SESSION_OPTION_CATALOG } from './agent-session-option-catalog-pi'
 import type {
   AgentSessionOptionCatalog,
   AgentSessionOptionCatalogMap,
@@ -35,7 +36,8 @@ const CATALOGS: AgentSessionOptionCatalogMap = {
   gemini: GEMINI_SESSION_OPTION_CATALOG,
   cursor: CURSOR_SESSION_OPTION_CATALOG,
   grok: GROK_SESSION_OPTION_CATALOG,
-  opencode: OPENCODE_SESSION_OPTION_CATALOG
+  opencode: OPENCODE_SESSION_OPTION_CATALOG,
+  pi: PI_SESSION_OPTION_CATALOG
 }
 
 export function getAgentSessionOptionCatalog(agent: AgentType): AgentSessionOptionCatalog | null {
