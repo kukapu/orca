@@ -275,9 +275,25 @@ describe('getPiAgentStatusExtensionSource', () => {
     (kind) => {
       // Why: inheriting the lead's owner PID must disable the extension as a
       // whole, so future hook additions cannot reopen the notification leak.
-      const lead = createHarness({ kind, pid: SELF_PID })
-      const child = createHarness({ kind, pid: SELF_PID + 1, env: lead.processEnv })
-      const grandchild = createHarness({ kind, pid: SELF_PID + 2, env: child.processEnv })
+      // The lead's pid is alive, so the dead-owner reclaim path cannot fire.
+      const aliveKill = (pid: number): void => {
+        if (pid !== SELF_PID) {
+          throw Object.assign(new Error(`ESRCH: ${pid}`), { code: 'ESRCH' })
+        }
+      }
+      const lead = createHarness({ kind, pid: SELF_PID, kill: aliveKill })
+      const child = createHarness({
+        kind,
+        pid: SELF_PID + 1,
+        env: lead.processEnv,
+        kill: aliveKill
+      })
+      const grandchild = createHarness({
+        kind,
+        pid: SELF_PID + 2,
+        env: child.processEnv,
+        kill: aliveKill
+      })
 
       expect(child.handlers).toEqual({})
       expect(grandchild.handlers).toEqual({})
@@ -287,6 +303,49 @@ describe('getPiAgentStatusExtensionSource', () => {
       expect(grandchild.processEnv[ownerKey]).toBe(String(SELF_PID))
       expect(child.fetchMock).not.toHaveBeenCalled()
       expect(child.spawnMock).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each(['pi', 'omp', 'prime-agent'] as const)(
+    'reclaims ownership from a dead %s owner pid after an agent restart (#16109)',
+    (kind) => {
+      const harness = createHarness({
+        kind,
+        pid: SELF_PID + 1,
+        env: {
+          [kind === 'prime-agent' ? 'ORCA_PRIME_AGENT_STATUS_OWNED' : 'ORCA_PI_STATUS_OWNED']:
+            String(SELF_PID)
+        }
+      })
+
+      expect(harness.handlers.agent_start).toBeTypeOf('function')
+      const ownerKey =
+        kind === 'prime-agent' ? 'ORCA_PRIME_AGENT_STATUS_OWNED' : 'ORCA_PI_STATUS_OWNED'
+      expect(harness.processEnv[ownerKey]).toBe(String(SELF_PID + 1))
+    }
+  )
+
+  it.each(['pi', 'omp'] as const)('treats a malformed %s owner value as dead', (kind) => {
+    const harness = createHarness({ kind, env: { ORCA_PI_STATUS_OWNED: 'not-a-pid' } })
+
+    expect(harness.handlers.agent_start).toBeTypeOf('function')
+    expect(harness.processEnv.ORCA_PI_STATUS_OWNED).toBe(String(SELF_PID))
+  })
+
+  it.each(['pi', 'omp'] as const)(
+    'stays suppressed when the %s owner probe returns EPERM',
+    (kind) => {
+      const harness = createHarness({
+        kind,
+        pid: SELF_PID + 1,
+        env: { ORCA_PI_STATUS_OWNED: String(SELF_PID) },
+        kill: (pid) => {
+          throw Object.assign(new Error(`EPERM: ${pid}`), { code: 'EPERM' })
+        }
+      })
+
+      expect(harness.handlers).toEqual({})
+      expect(harness.processEnv.ORCA_PI_STATUS_OWNED).toBe(String(SELF_PID))
     }
   )
 

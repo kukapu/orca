@@ -65,6 +65,7 @@ export function createAgentStatusExtensionHarness(args: {
   readFileSync?: (path: string, encoding: string) => string
   statSync?: (path: string) => { mtimeMs: number; size: number; ino: number }
   fetchImpl?: (...params: Parameters<typeof fetch>) => Promise<unknown>
+  kill?: (pid: number, signal: number | string) => void
 }): AgentStatusExtensionHarness {
   const fetchMock = vi.fn(
     args.fetchImpl ??
@@ -122,6 +123,13 @@ export function createAgentStatusExtensionHarness(args: {
       ...args.env
     },
     pid: args.pid ?? AGENT_STATUS_EXTENSION_SELF_PID,
+    // Why: the ownership guard probes liveness with kill(pid, 0); default to
+    // ESRCH (dead) so claim decisions are deterministic without host pids.
+    kill:
+      args.kill ??
+      ((pid: number) => {
+        throw Object.assign(new Error(`ESRCH: ${pid}`), { code: 'ESRCH' })
+      }),
     title: args.title ?? 'node',
     argv: args.argv ?? ['node', '/usr/bin/orca']
   }
