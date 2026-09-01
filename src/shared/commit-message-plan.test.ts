@@ -159,7 +159,10 @@ describe('planCommitMessageGeneration', () => {
     })
   })
 
-  it('moves an override flag and its value together after the run subcommand', () => {
+  it('passes a value-carrying override flag through verbatim', () => {
+    // Why: a non-flag token in the tail cannot be classified as a flag value
+    // vs `run`'s message positional, so only pure-flag tails move; opencode
+    // accepts `--model` as a global flag anyway, so verbatim stays correct.
     const result = planCommitMessageGeneration(
       {
         agentId: 'opencode',
@@ -174,9 +177,69 @@ describe('planCommitMessageGeneration', () => {
       plan: {
         binary: 'opencode',
         args: [
-          'run',
           '--model',
           'opencode/from-override',
+          'run',
+          '--agent',
+          'build',
+          '--format',
+          'default'
+        ]
+      }
+    })
+  })
+
+  it('passes wrapper flags ahead of the wrapper positional through verbatim', () => {
+    // Why (#17551 regression pin): `npx -y opencode` has no positional anchor
+    // before its first flag; reordering would make npx run a package named run.
+    const result = planCommitMessageGeneration(
+      {
+        agentId: 'opencode',
+        model: 'opencode/gpt-5.4-mini',
+        agentCommandOverride: 'npx -y opencode'
+      },
+      'PROMPT'
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      plan: {
+        binary: 'npx',
+        args: [
+          '-y',
+          'opencode',
+          'run',
+          '--model',
+          'opencode/gpt-5.4-mini',
+          '--agent',
+          'build',
+          '--format',
+          'default'
+        ]
+      }
+    })
+  })
+
+  it('passes a stray positional after an override flag through verbatim', () => {
+    const result = planCommitMessageGeneration(
+      {
+        agentId: 'opencode',
+        model: 'opencode/gpt-5.4-mini',
+        agentCommandOverride: 'opencode --auto extra'
+      },
+      'PROMPT'
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      plan: {
+        binary: 'opencode',
+        args: [
+          '--auto',
+          'extra',
+          'run',
+          '--model',
+          'opencode/gpt-5.4-mini',
           '--agent',
           'build',
           '--format',
@@ -521,7 +584,7 @@ describe('planCommitMessageGeneration', () => {
     })
   })
 
-  it('moves a wrapper override flag tail after run and removes the generated duplicate', () => {
+  it('passes a wrapper value-flag tail through verbatim after singleton dedupe', () => {
     const result = planCommitMessageGeneration(
       {
         agentId: 'opencode',
@@ -537,11 +600,11 @@ describe('planCommitMessageGeneration', () => {
         binary: 'npx',
         args: [
           'opencode',
-          'run',
           '--model',
           'opencode/gpt-5.5',
           '--log-level',
           'DEBUG',
+          'run',
           '--agent',
           'build',
           '--format',

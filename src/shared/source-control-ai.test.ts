@@ -81,20 +81,6 @@ describe('source-control AI resolution', () => {
     expect(resolve('branchName').params.model).toBe('gpt-5.5')
   })
 
-  it('heals a persisted retired model id to the spec default (#17691)', () => {
-    const base = settings()
-    base.defaultTuiAgent = 'opencode' as const
-    base.sourceControlAi = {
-      ...base.sourceControlAi!,
-      agentId: 'opencode' as const,
-      selectedModelByAgent: { opencode: 'opencode/deepseek-v4-flash-free' }
-    }
-    const result = resolveCommitMessageWithSettings(base)
-    expect(result.ok).toBe(true)
-    // Why: the retired id must never reach the CLI; the spec default heals it.
-    expect(result.ok && result.value.params.model).toBe('opencode/mimo-v2.5-free')
-  })
-
   it('heals a retired id even when frozen discovery data still lists it (#17691)', () => {
     const base = settings()
     base.defaultTuiAgent = 'opencode' as const
