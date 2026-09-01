@@ -240,6 +240,30 @@ index 7b4b9e1f990fbf95b51528bb56dc9717f5b87532..383df0c9c48355547c65e6c9bbba593d
  #endif
  
  struct DelBuf {
+@@ -340,14 +371,23 @@ Napi::Value PtyFork(const Napi::CallbackInfo& info) {
+   term->c_cc[VMIN] = 1;
+   term->c_cc[VTIME] = 0;
+ 
+   #if (__APPLE__)
+   term->c_cc[VDSUSP] = 25;
+   term->c_cc[VSTATUS] = 20;
+   #endif
+ 
++  /* Orca: glibc 2.42 turned cfsetispeed/cfsetospeed into real
++   * GLIBC_2.42-versioned symbols (inline helpers before), which breaks the
++   * Ubuntu 20.04 floor. Linux stores both speeds in c_cflag's CBAUD bits -
++   * write them directly with the old inline semantics; macOS keeps the
++   * libc calls (CBAUD is Linux-only). */
++  #if defined(__linux__) && defined(CBAUD)
++  term->c_cflag = (term->c_cflag & ~CBAUD) | (B38400 & CBAUD);
++  #else
+   cfsetispeed(term, B38400);
+   cfsetospeed(term, B38400);
++  #endif
+ 
+   // helperPath
+   std::string helper_path = info[9].As<Napi::String>();
+ 
 @@ -367,10 +398,11 @@ Napi::Value PtyFork(const Napi::CallbackInfo& info) {
      argv[i + 3] = strdup(arg.c_str());
    }
