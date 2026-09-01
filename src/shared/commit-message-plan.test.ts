@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { planCommitMessageGeneration, planAgentBinary } from './commit-message-plan'
+import { orderOpenCodeRunFlags } from './opencode-run-flag-order'
 
 describe('planCommitMessageGeneration', () => {
   it('plans Claude non-interactive generation with the prompt on stdin only', () => {
@@ -126,6 +127,64 @@ describe('planCommitMessageGeneration', () => {
       })
     }
   )
+
+  it('moves an npx opencode flag tail after the run subcommand', () => {
+    const result = planCommitMessageGeneration(
+      {
+        agentId: 'opencode',
+        model: 'opencode/gpt-5.4-mini',
+        agentCommandOverride: 'npx opencode --auto'
+      },
+      'PROMPT'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      plan: {
+        binary: 'npx',
+        args: [
+          'opencode',
+          'run',
+          '--auto',
+          '--model',
+          'opencode/gpt-5.4-mini',
+          '--agent',
+          'build',
+          '--format',
+          'default'
+        ],
+        stdinPayload: 'PROMPT',
+        label: 'OpenCode'
+      }
+    })
+  })
+
+  it('moves an override flag and its value together after the run subcommand', () => {
+    const result = planCommitMessageGeneration(
+      {
+        agentId: 'opencode',
+        model: 'opencode/gpt-5.4-mini',
+        agentCommandOverride: 'opencode --model opencode/from-override'
+      },
+      'PROMPT'
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      plan: {
+        binary: 'opencode',
+        args: [
+          'run',
+          '--model',
+          'opencode/from-override',
+          '--agent',
+          'build',
+          '--format',
+          'default'
+        ]
+      }
+    })
+  })
 
   it('plans Amp execute generation without the removed archive flag', () => {
     const result = planCommitMessageGeneration(
@@ -462,7 +521,7 @@ describe('planCommitMessageGeneration', () => {
     })
   })
 
-  it('keeps a model flag in the agent command override and removes the generated duplicate', () => {
+  it('moves a wrapper override flag tail after run and removes the generated duplicate', () => {
     const result = planCommitMessageGeneration(
       {
         agentId: 'opencode',
@@ -478,11 +537,11 @@ describe('planCommitMessageGeneration', () => {
         binary: 'npx',
         args: [
           'opencode',
+          'run',
           '--model',
           'opencode/gpt-5.5',
           '--log-level',
           'DEBUG',
-          'run',
           '--agent',
           'build',
           '--format',
@@ -659,5 +718,39 @@ describe('backslash mode reaches every command the user can type (#11375)', () =
     )
 
     expect(plan.ok && plan.plan.args).toContain('/my dir')
+  })
+})
+
+describe('orderOpenCodeRunFlags passthrough branches (#17551)', () => {
+  it('passes a prefix through when the generated args do not start with run', () => {
+    expect(orderOpenCodeRunFlags('opencode', 'opencode', ['--auto'], ['serve'])).toEqual([
+      '--auto',
+      'serve'
+    ])
+  })
+
+  it('passes a prefix through when it already contains its own run subcommand', () => {
+    expect(
+      orderOpenCodeRunFlags('opencode', 'opencode', ['--auto', 'run'], ['run', '--model', 'm'])
+    ).toEqual(['--auto', 'run', 'run', '--model', 'm'])
+  })
+
+  it('passes a prefix through when it contains an option terminator', () => {
+    expect(
+      orderOpenCodeRunFlags(
+        'opencode',
+        'npx',
+        ['opencode', '--', '--auto'],
+        ['run', '--model', 'm']
+      )
+    ).toEqual(['opencode', '--', '--auto', 'run', '--model', 'm'])
+  })
+
+  it('passes non-opencode agents through regardless of prefix shape', () => {
+    expect(orderOpenCodeRunFlags('claude', 'claude', ['--model', 'opus'], ['-p'])).toEqual([
+      '--model',
+      'opus',
+      '-p'
+    ])
   })
 })

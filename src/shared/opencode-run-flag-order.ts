@@ -2,27 +2,30 @@ import type { TuiAgent } from './tui-agent'
 
 /** Why: flags before `run` become opencode *global* flags and change the invoked
  *  command, so anchor command-override flags after the subcommand (#17551).
- *  Only a bare opencode binary is reordered — an `npx opencode` prefix names
- *  the CLI itself and must stay in front — and a prefix carrying an option
- *  terminator is positional input, never moved. */
+ *  The rule is shape-based — a wrapper prefix like `npx opencode --auto`
+ *  misparses the same way a bare binary does. A prefix carrying its own `run`
+ *  or an option terminator is positional input, never moved. */
 export function orderOpenCodeRunFlags(
   agentId: TuiAgent,
-  binary: string,
+  _binary: string,
   prefixArgs: string[],
   generatedArgs: string[]
 ): string[] {
-  const isBareOpenCodeBinary =
-    agentId === 'opencode' && /(?:^|[\\/])opencode(?:\.(?:cmd|exe))?$/i.test(binary)
-  if (!isBareOpenCodeBinary || prefixArgs.includes('--')) {
+  if (agentId !== 'opencode' || generatedArgs[0] !== 'run') {
     return [...prefixArgs, ...generatedArgs]
   }
-  const runIndex = generatedArgs.indexOf('run')
-  if (runIndex === -1) {
+  if (prefixArgs.includes('run') || prefixArgs.includes('--')) {
     return [...prefixArgs, ...generatedArgs]
   }
+  const flagStart = prefixArgs.findIndex((token) => token.startsWith('-'))
+  if (flagStart === -1) {
+    return [...prefixArgs, ...generatedArgs]
+  }
+  // The flag tail is a suffix: flags and their values move together, positionals stay.
   return [
-    ...generatedArgs.slice(0, runIndex + 1),
-    ...prefixArgs,
-    ...generatedArgs.slice(runIndex + 1)
+    ...prefixArgs.slice(0, flagStart),
+    generatedArgs[0],
+    ...prefixArgs.slice(flagStart),
+    ...generatedArgs.slice(1)
   ]
 }

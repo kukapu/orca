@@ -4,9 +4,10 @@ An OpenCode agent command override like `opencode --auto` was prepended
 verbatim, yielding `opencode --auto run ...`: OpenCode parses pre-`run`
 flags as global flags, so the invoked command changed.
 
-For a bare `opencode` / `opencode.cmd` / `opencode.exe` binary the plan now
-anchors command-override flags right after the `run` subcommand
-(`opencode run --auto --model ...`). Wrapper prefixes such as `npx opencode`
-and prefixes containing an option terminator are left in place.
+The rule is shape-based: any OpenCode prefix — bare binary or a wrapper like
+`npx opencode --auto` — has its flag tail (flags and their values, a suffix)
+anchored right after the `run` subcommand, with leading positionals kept in
+front (`npx opencode run --auto --model ...`). Prefixes containing an option
+terminator or their own `run` are left in place, as are non-`run` base args.
 
 Commit: `fix(opencode): preserve the run subcommand before launch flags (#17551)`
