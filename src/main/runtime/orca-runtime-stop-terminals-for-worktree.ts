@@ -93,9 +93,19 @@ export class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithReso
         // provider exit so a following relay restart cannot respawn the tab.
         return stopAndWait ? stopAndWait(ptyId) : Boolean(this.ptyController?.kill(ptyId))
       }
-      const stopResult = options.stopPty
-        ? await options.stopPty(ptyId, stop)
-        : { stopped: await stop(), owner: true }
+      let stopResult: { stopped: boolean; owner: boolean }
+      if (options.stopPty) {
+        stopResult = await options.stopPty(ptyId, stop)
+      } else {
+        try {
+          stopResult = { stopped: await stop(), owner: true }
+        } catch {
+          // Why: one rejecting stopAndWait (e.g. a rejected provider startup)
+          // must count as a single failure, not abort the sweep and leave the
+          // remaining PTYs running.
+          stopResult = { stopped: false, owner: true }
+        }
+      }
       if (stopResult.owner && stopResult.stopped) {
         stopped += 1
       }

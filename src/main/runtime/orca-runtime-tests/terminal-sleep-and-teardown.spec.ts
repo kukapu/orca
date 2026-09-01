@@ -138,6 +138,35 @@ describe('OrcaRuntimeService', () => {
     expect(kill).not.toHaveBeenCalled()
   })
 
+  it('continues the stop sweep when one direct stop rejects', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const kill = vi.fn(() => true)
+    // Why: a rejected provider startup must not abort the whole terminal.stop sweep.
+    const stopAndWait = vi.fn(async (ptyId: string) => {
+      if (ptyId === 'pty-1') {
+        throw new Error('provider startup failed')
+      }
+      return true
+    })
+    runtime.setPtyController({
+      write: () => true,
+      kill,
+      stopAndWait,
+      getForegroundProcess: async () => null
+    })
+    syncSinglePty(runtime, null)
+    runtime.registerPty('pty-1', TEST_WORKTREE_ID, null)
+    runtime.registerPty('pty-2', TEST_WORKTREE_ID, null)
+
+    await expect(
+      runtime.stopTerminalsForWorktree(TEST_WORKTREE_ID, {
+        resolvedWorktreeId: TEST_WORKTREE_ID
+      })
+    ).resolves.toEqual({ stopped: 1 })
+    expect(stopAndWait).toHaveBeenCalledTimes(2)
+    expect(kill).not.toHaveBeenCalled()
+  })
+
   it('stops only the owning connection when one worktree id lives on two hosts', async () => {
     const runtime = new OrcaRuntimeService(store)
     const kill = vi.fn(() => true)
