@@ -11,6 +11,7 @@ import {
 import { join } from 'node:path'
 import { PROTOCOL_VERSION } from './types'
 import { DaemonCrashLoopError, DaemonRespawnThrottle } from './daemon-respawn-throttle'
+import { assertDaemonSocketPathWithinSunPathBudget } from './daemon-socket-path-budget'
 
 export type DaemonConnectionInfo = {
   socketPath: string
@@ -68,6 +69,9 @@ export class DaemonSpawner {
   }
 
   async ensureRunning(): Promise<DaemonConnectionInfo> {
+    // Why (#17840): forking with an over-budget path yields a daemon that
+    // reports ready while no client can reach its endpoint.
+    assertDaemonSocketPathWithinSunPathBudget(this.socketPath)
     if (this.handle) {
       return { socketPath: this.socketPath, tokenPath: this.tokenPath }
     }

@@ -1,6 +1,7 @@
 import { DaemonServer } from './daemon-server'
 import type { DaemonServerOptions } from './daemon-server-options'
 import type { DaemonFileLog } from './daemon-file-log'
+import { assertDaemonSocketPathWithinSunPathBudget } from './daemon-socket-path-budget'
 
 export type DaemonStartOptions = {
   socketPath: string
@@ -29,6 +30,10 @@ export type DaemonHandle = {
 }
 
 export async function startDaemon(opts: DaemonStartOptions): Promise<DaemonHandle> {
+  // Why (#17840): past the sun_path budget the daemon either fails to bind or
+  // publishes an endpoint no client can connect to, serving with terminal
+  // survival silently off. Refuse loudly instead.
+  assertDaemonSocketPathWithinSunPathBudget(opts.socketPath)
   const server = new DaemonServer({
     socketPath: opts.socketPath,
     tokenPath: opts.tokenPath,
