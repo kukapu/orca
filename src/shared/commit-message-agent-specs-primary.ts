@@ -186,6 +186,8 @@ export function buildPrimaryCommitMessageAgentSpecs({
           ...withOpenAiThinking('gpt-5.4-mini')
         }
       ],
+      // Why: the retired free-tier default, listed explicitly so healing stays deterministic despite frozen discovery data (#17691).
+      retiredModelIds: ['opencode/deepseek-v4-flash-free'],
       defaultModelId: 'opencode/mimo-v2.5-free'
     },
     pi: {

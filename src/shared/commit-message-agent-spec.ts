@@ -66,6 +66,9 @@ export type CommitMessageAgentSpec = {
   }
   models: CommitMessageModel[]
   defaultModelId: string
+  /** Provider-retired ids: a resolved model matching one is healed back to a
+   *  live spec entry instead of being sent to the CLI (#17691). */
+  retiredModelIds?: readonly string[]
 }
 
 export type CommitMessageModelCapability = {

@@ -214,21 +214,17 @@ export function resolveSourceControlAiForOperation(
     discoveredModels.find((candidate) => candidate.id === persistedModelId) ??
     getCommitMessageModel(resolvedAgent, spec.defaultModelId) ??
     null
-  // Why (#17691): provider catalogs rot — OpenCode retired the free tier model
-  // this spec once shipped as its default, so `opencode run --model <stale>`
-  // failed with an opaque UnknownError. The host's own discovery output is the
-  // live truth: once it has answered, a model it does not list must not reach
-  // the CLI. Heal to the spec default when it survives, else the first
-  // discovered model (the same policy finalizeModelDiscoveryOutput applies).
-  const resolvedFromCatalogs = model
-  if (
-    resolvedFromCatalogs &&
-    discoveredModels.length > 0 &&
-    !discoveredModels.some((candidate) => candidate.id === resolvedFromCatalogs.id)
-  ) {
+  // Why (#17691): persisted discovery data is frozen legacy state — an absent id
+  // is not evidence of retirement. Heal only ids the spec explicitly retires,
+  // never against the stale discovered list.
+  if (model && spec.retiredModelIds?.includes(model.id)) {
+    const retiredIds = spec.retiredModelIds
     model =
-      discoveredModels.find((candidate) => candidate.id === spec.defaultModelId) ??
-      discoveredModels[0]
+      (retiredIds.includes(spec.defaultModelId)
+        ? undefined
+        : spec.models.find((candidate) => candidate.id === spec.defaultModelId)) ??
+      spec.models.find((candidate) => !retiredIds.includes(candidate.id)) ??
+      null
   }
   if (!model) {
     return { ok: false, error: `No model is available for ${spec.label}.` }

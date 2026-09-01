@@ -59,6 +59,21 @@ function resolve(operation: SourceControlAiOperation, overrides?: RepoSourceCont
   return result.value
 }
 
+function resolveCommitMessageWithSettings(overrides: GlobalSettings) {
+  return resolveSourceControlAiForOperation({
+    settings: overrides,
+    repo: null,
+    operation: 'commitMessage',
+    discoveryHostKey: 'local',
+    prCreationProductDefaults: {
+      draft: false,
+      useTemplate: false,
+      generateDetailsOnOpen: false,
+      openAfterCreate: false
+    }
+  })
+}
+
 describe('source-control AI resolution', () => {
   it('uses the global default model for every operation', () => {
     expect(resolve('commitMessage').params.model).toBe('gpt-5.5')
@@ -66,66 +81,75 @@ describe('source-control AI resolution', () => {
     expect(resolve('branchName').params.model).toBe('gpt-5.5')
   })
 
-  it('heals a retired model id against the host discovery output (#17691)', () => {
+  it('heals a persisted retired model id to the spec default (#17691)', () => {
     const base = settings()
     base.defaultTuiAgent = 'opencode' as const
     base.sourceControlAi = {
       ...base.sourceControlAi!,
       agentId: 'opencode' as const,
-      selectedModelByAgent: {},
-      discoveredModelsByAgentByHost: {
-        local: {
-          opencode: [{ id: 'opencode/ling-3.0-flash-fin-free', label: 'Ling' }]
-        }
-      }
+      selectedModelByAgent: { opencode: 'opencode/deepseek-v4-flash-free' }
     }
-    const result = resolveSourceControlAiForOperation({
-      settings: base,
-      repo: null,
-      operation: 'commitMessage',
-      discoveryHostKey: 'local',
-      prCreationProductDefaults: {
-        draft: false,
-        useTemplate: false,
-        generateDetailsOnOpen: false,
-        openAfterCreate: false
-      }
-    })
+    const result = resolveCommitMessageWithSettings(base)
     expect(result.ok).toBe(true)
-    // Why: the static-catalog default is absent from discovery, so the live
-    // catalog must win instead of sending a retired id to the CLI.
-    expect(result.ok && result.value.params.model).toBe('opencode/ling-3.0-flash-fin-free')
+    // Why: the retired id must never reach the CLI; the spec default heals it.
+    expect(result.ok && result.value.params.model).toBe('opencode/mimo-v2.5-free')
   })
 
-  it('keeps a persisted model choice that discovery still lists', () => {
+  it('heals a retired id even when frozen discovery data still lists it (#17691)', () => {
     const base = settings()
     base.defaultTuiAgent = 'opencode' as const
     base.sourceControlAi = {
       ...base.sourceControlAi!,
       agentId: 'opencode' as const,
-      selectedModelByAgent: { opencode: 'opencode/mimo-v2.5-free' },
+      selectedModelByAgent: { opencode: 'opencode/deepseek-v4-flash-free' },
       discoveredModelsByAgentByHost: {
         local: {
-          opencode: [
-            { id: 'opencode/mimo-v2.5-free', label: 'MiMo' },
-            { id: 'opencode/ling-3.0-flash-fin-free', label: 'Ling' }
-          ]
+          opencode: [{ id: 'opencode/deepseek-v4-flash-free', label: 'DeepSeek' }]
         }
       }
     }
-    const result = resolveSourceControlAiForOperation({
-      settings: base,
-      repo: null,
-      operation: 'commitMessage',
-      discoveryHostKey: 'local',
-      prCreationProductDefaults: {
-        draft: false,
-        useTemplate: false,
-        generateDetailsOnOpen: false,
-        openAfterCreate: false
-      }
-    })
+    const result = resolveCommitMessageWithSettings(base)
+    expect(result.ok).toBe(true)
+    // Why: legacy panes persisted the retired id and its discovered entry
+    // together; being "in-list" must not keep the retired id alive.
     expect(result.ok && result.value.params.model).toBe('opencode/mimo-v2.5-free')
+  })
+
+  it('keeps a valid current choice that a frozen discovered list lacks', () => {
+    const base = settings()
+    base.defaultTuiAgent = 'opencode' as const
+    base.sourceControlAi = {
+      ...base.sourceControlAi!,
+      agentId: 'opencode' as const,
+      selectedModelByAgent: { opencode: 'opencode/gpt-5.4-mini' },
+      discoveredModelsByAgentByHost: {
+        local: {
+          opencode: [{ id: 'opencode/mimo-v2.5-free', label: 'MiMo' }]
+        }
+      }
+    }
+    const result = resolveCommitMessageWithSettings(base)
+    // Why: absence from frozen discovery data is not evidence of retirement —
+    // substituting discovered[0] could silently switch to a paid model.
+    expect(result.ok && result.value.params.model).toBe('opencode/gpt-5.4-mini')
+  })
+
+  it('never heals static-catalog agents without retired ids', () => {
+    const base = settings()
+    base.defaultTuiAgent = 'copilot' as const
+    base.sourceControlAi = {
+      ...base.sourceControlAi!,
+      agentId: 'copilot' as const,
+      selectedModelByAgent: { copilot: 'gpt-5.4' },
+      discoveredModelsByAgentByHost: {
+        local: {
+          copilot: [{ id: 'gpt-5.2', label: 'GPT-5.2' }]
+        }
+      }
+    }
+    const result = resolveCommitMessageWithSettings(base)
+    // Why: a stale copilot list must not swap the valid current default.
+    expect(result.ok && result.value.params.model).toBe('gpt-5.4')
   })
 
   it('resolves generation config and PR defaults when Source Control AI actions are hidden', () => {
