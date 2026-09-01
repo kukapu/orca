@@ -72,6 +72,7 @@ export class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithReso
         if (options.deadline !== undefined && Date.now() >= options.deadline) {
           return false
         }
+        const stopAndWait = this.ptyController?.stopAndWait?.bind(this.ptyController)
         if (options.stopPty) {
           // Why: destructive worktree cleanup must not let its cross-surface
           // dedupe treat fire-and-forget controller.kill as physical exit.
@@ -80,18 +81,21 @@ export class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithReso
           // (non-destructive) keeps the provider default RPC timeout.
           if (options.deadline !== undefined) {
             return (
-              this.ptyController?.stopAndWait?.(ptyId, {
+              stopAndWait?.(ptyId, {
                 deadlineMs: teardownRpcDeadline(options.deadline)
               }) ?? false
             )
           }
-          return this.ptyController?.stopAndWait?.(ptyId) ?? false
+          return stopAndWait?.(ptyId) ?? false
         }
-        return Boolean(this.ptyController?.kill(ptyId))
+        // Why (#11803): the direct RPC path must not report success on a
+        // fire-and-forget kill — the receipt should represent acknowledged
+        // provider exit so a following relay restart cannot respawn the tab.
+        return stopAndWait ? stopAndWait(ptyId) : Boolean(this.ptyController?.kill(ptyId))
       }
       const stopResult = options.stopPty
         ? await options.stopPty(ptyId, stop)
-        : { stopped: stop(), owner: true }
+        : { stopped: await stop(), owner: true }
       if (stopResult.owner && stopResult.stopped) {
         stopped += 1
       }

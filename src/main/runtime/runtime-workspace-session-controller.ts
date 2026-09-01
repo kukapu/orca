@@ -25,6 +25,11 @@ export class RuntimeWorkspaceSessionController {
   constructor(private readonly deps: RuntimeWorkspaceSessionDependencies) {}
 
   tryGetHostId(worktreeId: string): ExecutionHostId | null {
+    const catalogHostId = this.tryGetCatalogHostId(worktreeId)
+    return catalogHostId ? this.resolveDurableHostId(worktreeId, catalogHostId) : null
+  }
+
+  private tryGetCatalogHostId(worktreeId: string): ExecutionHostId | null {
     const store = this.deps.getStore()
     const scope = parseWorkspaceKey(worktreeId)
     if (scope?.type === 'folder') {
@@ -45,6 +50,40 @@ export class RuntimeWorkspaceSessionController {
     const resolvedWorktreeId = scope?.type === 'worktree' ? scope.worktreeId : worktreeId
     const repo = store?.getRepo?.(getRepoIdFromWorktreeId(resolvedWorktreeId))
     return repo ? getRepoExecutionHostId(repo) : LOCAL_EXECUTION_HOST_ID
+  }
+
+  private sessionContainsWorktree(hostId: ExecutionHostId, worktreeId: string): boolean {
+    const session = this.deps.getStore()?.getWorkspaceSession?.(hostId)
+    return session?.tabsByWorktree ? worktreeId in session.tabsByWorktree : false
+  }
+
+  // Why (#11803): a repo/folder catalog can keep pointing at an obsolete
+  // runtime:<uuid> partition after a serve restart, while the worktree's tabs
+  // live in exactly one other partition — creation then hits one store and
+  // close another (tab_not_found, resurrecting tabs). When the catalog-selected
+  // partition holds nothing for the worktree and exactly one persisted
+  // partition holds it, route to that unique durable owner.
+  private resolveDurableHostId(
+    worktreeId: string,
+    catalogHostId: ExecutionHostId
+  ): ExecutionHostId {
+    const store = this.deps.getStore()
+    if (!store?.getWorkspaceSession || !store.getWorkspaceSessionHostIds) {
+      return catalogHostId
+    }
+    if (this.sessionContainsWorktree(catalogHostId, worktreeId)) {
+      return catalogHostId
+    }
+    // Why: only runtime partitions go stale by regeneration; ssh/local catalog
+    // ids keep their meaning, and rerouting away from an SSH host's partition
+    // would violate the execution-boundary rule for unreachable hosts.
+    if (parseExecutionHostId(catalogHostId)?.kind !== 'runtime') {
+      return catalogHostId
+    }
+    const owners = store
+      .getWorkspaceSessionHostIds()
+      .filter((hostId) => this.sessionContainsWorktree(hostId, worktreeId))
+    return owners.length === 1 ? (owners[0] as ExecutionHostId) : catalogHostId
   }
 
   getHostId(worktreeId: string): ExecutionHostId {
