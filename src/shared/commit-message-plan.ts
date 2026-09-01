@@ -5,6 +5,7 @@ import {
   isCustomAgentId
 } from './commit-message-agent-spec'
 import { planCustomCommand, tokenizeCustomCommandTemplate } from './commit-message-prompt'
+import { orderOpenCodeRunFlags } from './opencode-run-flag-order'
 import type { TuiAgent } from './tui-agent'
 
 // Why: planning is a pure transformation from "user request + prompt text"
@@ -327,7 +328,7 @@ export function planCommitMessageGeneration(
     ok: true,
     plan: {
       binary: command.binary,
-      args: [...merged.prefixArgs, ...args],
+      args: orderOpenCodeRunFlags(input.agentId, command.binary, merged.prefixArgs, args),
       stdinPayload: spec.promptDelivery === 'stdin' ? prompt : null,
       label: spec.label
     }
