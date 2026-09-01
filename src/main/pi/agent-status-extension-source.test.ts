@@ -13,11 +13,11 @@ describe('getPiAgentStatusExtensionSource', () => {
     })
     const worker = createHarness({
       kind: 'prime-agent',
-      env: { ORCA_PI_STATUS_OWNED: String(SELF_PID - 1) }
+      env: { ORCA_PRIME_AGENT_STATUS_OWNED: String(SELF_PID - 1) }
     })
 
     expect(frontend.handlers).toEqual({})
-    expect(frontend.processEnv.ORCA_PI_STATUS_OWNED).toBeUndefined()
+    expect(frontend.processEnv.ORCA_PRIME_AGENT_STATUS_OWNED).toBeUndefined()
     expect(worker.handlers.agent_start).toBeTypeOf('function')
     expect(worker.processEnv.ORCA_PRIME_AGENT_STATUS_OWNED).toBe(String(SELF_PID))
   })
@@ -325,27 +325,34 @@ describe('getPiAgentStatusExtensionSource', () => {
     }
   )
 
-  it.each(['pi', 'omp'] as const)('treats a malformed %s owner value as dead', (kind) => {
-    const harness = createHarness({ kind, env: { ORCA_PI_STATUS_OWNED: 'not-a-pid' } })
+  it.each(['pi', 'omp', 'prime-agent'] as const)(
+    'treats a malformed %s owner value as dead',
+    (kind) => {
+      const ownerKey =
+        kind === 'prime-agent' ? 'ORCA_PRIME_AGENT_STATUS_OWNED' : 'ORCA_PI_STATUS_OWNED'
+      const harness = createHarness({ kind, env: { [ownerKey]: 'not-a-pid' } })
 
-    expect(harness.handlers.agent_start).toBeTypeOf('function')
-    expect(harness.processEnv.ORCA_PI_STATUS_OWNED).toBe(String(SELF_PID))
-  })
+      expect(harness.handlers.agent_start).toBeTypeOf('function')
+      expect(harness.processEnv[ownerKey]).toBe(String(SELF_PID))
+    }
+  )
 
-  it.each(['pi', 'omp'] as const)(
+  it.each(['pi', 'omp', 'prime-agent'] as const)(
     'stays suppressed when the %s owner probe returns EPERM',
     (kind) => {
+      const ownerKey =
+        kind === 'prime-agent' ? 'ORCA_PRIME_AGENT_STATUS_OWNED' : 'ORCA_PI_STATUS_OWNED'
       const harness = createHarness({
         kind,
         pid: SELF_PID + 1,
-        env: { ORCA_PI_STATUS_OWNED: String(SELF_PID) },
+        env: { [ownerKey]: String(SELF_PID) },
         kill: (pid) => {
           throw Object.assign(new Error(`EPERM: ${pid}`), { code: 'EPERM' })
         }
       })
 
       expect(harness.handlers).toEqual({})
-      expect(harness.processEnv.ORCA_PI_STATUS_OWNED).toBe(String(SELF_PID))
+      expect(harness.processEnv[ownerKey]).toBe(String(SELF_PID))
     }
   )
 
