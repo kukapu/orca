@@ -209,10 +209,27 @@ export function resolveSourceControlAiForOperation(
     defaultModelId: spec.defaultModelId
   })
   const discoveredModels = getDiscoveredModels(source, legacy, hostKey, resolvedAgent)
-  const model =
+  let model =
     spec.models.find((candidate) => candidate.id === persistedModelId) ??
     discoveredModels.find((candidate) => candidate.id === persistedModelId) ??
-    getCommitMessageModel(resolvedAgent, spec.defaultModelId)
+    getCommitMessageModel(resolvedAgent, spec.defaultModelId) ??
+    null
+  // Why (#17691): provider catalogs rot — OpenCode retired the free tier model
+  // this spec once shipped as its default, so `opencode run --model <stale>`
+  // failed with an opaque UnknownError. The host's own discovery output is the
+  // live truth: once it has answered, a model it does not list must not reach
+  // the CLI. Heal to the spec default when it survives, else the first
+  // discovered model (the same policy finalizeModelDiscoveryOutput applies).
+  const resolvedFromCatalogs = model
+  if (
+    resolvedFromCatalogs &&
+    discoveredModels.length > 0 &&
+    !discoveredModels.some((candidate) => candidate.id === resolvedFromCatalogs.id)
+  ) {
+    model =
+      discoveredModels.find((candidate) => candidate.id === spec.defaultModelId) ??
+      discoveredModels[0]
+  }
   if (!model) {
     return { ok: false, error: `No model is available for ${spec.label}.` }
   }

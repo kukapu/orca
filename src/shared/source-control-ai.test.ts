@@ -66,6 +66,68 @@ describe('source-control AI resolution', () => {
     expect(resolve('branchName').params.model).toBe('gpt-5.5')
   })
 
+  it('heals a retired model id against the host discovery output (#17691)', () => {
+    const base = settings()
+    base.defaultTuiAgent = 'opencode' as const
+    base.sourceControlAi = {
+      ...base.sourceControlAi!,
+      agentId: 'opencode' as const,
+      selectedModelByAgent: {},
+      discoveredModelsByAgentByHost: {
+        local: {
+          opencode: [{ id: 'opencode/ling-3.0-flash-fin-free', label: 'Ling' }]
+        }
+      }
+    }
+    const result = resolveSourceControlAiForOperation({
+      settings: base,
+      repo: null,
+      operation: 'commitMessage',
+      discoveryHostKey: 'local',
+      prCreationProductDefaults: {
+        draft: false,
+        useTemplate: false,
+        generateDetailsOnOpen: false,
+        openAfterCreate: false
+      }
+    })
+    expect(result.ok).toBe(true)
+    // Why: the static-catalog default is absent from discovery, so the live
+    // catalog must win instead of sending a retired id to the CLI.
+    expect(result.ok && result.value.params.model).toBe('opencode/ling-3.0-flash-fin-free')
+  })
+
+  it('keeps a persisted model choice that discovery still lists', () => {
+    const base = settings()
+    base.defaultTuiAgent = 'opencode' as const
+    base.sourceControlAi = {
+      ...base.sourceControlAi!,
+      agentId: 'opencode' as const,
+      selectedModelByAgent: { opencode: 'opencode/mimo-v2.5-free' },
+      discoveredModelsByAgentByHost: {
+        local: {
+          opencode: [
+            { id: 'opencode/mimo-v2.5-free', label: 'MiMo' },
+            { id: 'opencode/ling-3.0-flash-fin-free', label: 'Ling' }
+          ]
+        }
+      }
+    }
+    const result = resolveSourceControlAiForOperation({
+      settings: base,
+      repo: null,
+      operation: 'commitMessage',
+      discoveryHostKey: 'local',
+      prCreationProductDefaults: {
+        draft: false,
+        useTemplate: false,
+        generateDetailsOnOpen: false,
+        openAfterCreate: false
+      }
+    })
+    expect(result.ok && result.value.params.model).toBe('opencode/mimo-v2.5-free')
+  })
+
   it('resolves generation config and PR defaults when Source Control AI actions are hidden', () => {
     const base = settings()
     base.sourceControlAi = {
