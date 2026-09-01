@@ -48,6 +48,21 @@ describe('orchestration worker launch preferences', () => {
     })
   })
 
+  it('accepts nested OpenCode provider/model ids as opaque strings', () => {
+    expect(
+      resolveWorkerLaunchPreferences({
+        agent: 'opencode',
+        model: 'zai-coding-plan/glm-5.3'
+      })
+    ).toEqual({
+      preferences: { model: 'zai-coding-plan/glm-5.3' },
+      receipt: {
+        requested: { agent: 'opencode', model: 'zai-coding-plan/glm-5.3', effort: null },
+        effective: { agent: 'opencode', model: 'zai-coding-plan/glm-5.3', effort: null }
+      }
+    })
+  })
+
   it('does not invent a Pi thinking level when only a model is requested', () => {
     expect(
       resolveWorkerLaunchPreferences({ agent: 'pi', model: 'google/gemini-3-pro' }).preferences

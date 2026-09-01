@@ -148,4 +148,18 @@ describe('RuntimeWorkspaceSessionController durable host resolution (#11803)', (
     const controller = buildController(store)
     expect(() => controller.getHostId('folder:missing')).toThrow('folder_workspace_not_found')
   })
+
+  it('reroutes a stale runtime catalog host for folder workspaces too', () => {
+    const { store } = buildStore({
+      folderWorkspaces: [
+        { id: 'fw-1', executionHostId: 'runtime:old' } as unknown as FolderWorkspace
+      ],
+      sessions: {
+        'runtime:old': sessionWithWorktrees([]),
+        local: sessionWithWorktrees(['folder:fw-1'])
+      }
+    })
+    const controller = buildController(store)
+    expect(controller.get('folder:fw-1')).toBe(store.getWorkspaceSession('local'))
+  })
 })
