@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
-import { startDaemon } from './daemon-main'
-import { DaemonSpawner, getDaemonSocketPath } from './daemon-spawner'
+import { startDaemon } from './daemon/daemon-main'
+import { DaemonSpawner, getDaemonSocketPath } from './daemon/daemon-spawner'
+import { UnixSocketTransport } from './runtime/rpc/unix-socket-transport'
 import {
-  assertDaemonSocketPathWithinSunPathBudget,
-  DaemonSocketPathTooLongError,
-  daemonSocketPathExceedsSunPathBudget
-} from './daemon-socket-path-budget'
+  assertUnixSocketPathWithinSunPathBudget,
+  UnixSocketPathTooLongError,
+  unixSocketPathExceedsSunPathBudget
+} from './unix-socket-sun-path-budget'
+
+const MAX_BYTES = process.platform === 'darwin' ? 103 : 107
+
+function pathOfBytes(byteLength: number): string {
+  return `${'x'.repeat(Math.max(0, byteLength - '/daemon-v1.sock'.length))}/daemon-v1.sock`
+}
 
 function createMinimalSubprocess() {
   return {
@@ -23,39 +30,35 @@ function createMinimalSubprocess() {
   }
 }
 
-const MAX_BYTES = process.platform === 'darwin' ? 103 : 107
-
-function pathOfBytes(byteLength: number): string {
-  return `${'x'.repeat(Math.max(0, byteLength - '/daemon-v1.sock'.length))}/daemon-v1.sock`
-}
-
-describe('daemon socket path sun_path budget (#17840)', () => {
+describe('unix socket path sun_path budget (#17840)', () => {
   it.skipIf(process.platform === 'win32')('accepts a path within the budget', () => {
-    expect(daemonSocketPathExceedsSunPathBudget(pathOfBytes(MAX_BYTES))).toBe(false)
-    expect(() => assertDaemonSocketPathWithinSunPathBudget(pathOfBytes(MAX_BYTES))).not.toThrow()
+    expect(unixSocketPathExceedsSunPathBudget(pathOfBytes(MAX_BYTES))).toBe(false)
+    expect(() =>
+      assertUnixSocketPathWithinSunPathBudget('terminal daemon', pathOfBytes(MAX_BYTES))
+    ).not.toThrow()
   })
 
   it.skipIf(process.platform === 'win32')('refuses a path one byte over the budget', () => {
     const tooLong = pathOfBytes(MAX_BYTES + 1)
-    expect(daemonSocketPathExceedsSunPathBudget(tooLong)).toBe(true)
-    expect(() => assertDaemonSocketPathWithinSunPathBudget(tooLong)).toThrowError(
-      DaemonSocketPathTooLongError
+    expect(unixSocketPathExceedsSunPathBudget(tooLong)).toBe(true)
+    expect(() => assertUnixSocketPathWithinSunPathBudget('terminal daemon', tooLong)).toThrowError(
+      UnixSocketPathTooLongError
     )
     try {
-      assertDaemonSocketPathWithinSunPathBudget(tooLong)
+      assertUnixSocketPathWithinSunPathBudget('terminal daemon', tooLong)
     } catch (error) {
-      expect(error).toBeInstanceOf(DaemonSocketPathTooLongError)
-      expect((error as DaemonSocketPathTooLongError).maxBytes).toBe(MAX_BYTES)
-      expect((error as DaemonSocketPathTooLongError).pathBytes).toBe(MAX_BYTES + 1)
+      expect(error).toBeInstanceOf(UnixSocketPathTooLongError)
+      expect((error as UnixSocketPathTooLongError).maxBytes).toBe(MAX_BYTES)
+      expect((error as UnixSocketPathTooLongError).pathBytes).toBe(MAX_BYTES + 1)
+      expect((error as UnixSocketPathTooLongError).owner).toBe('terminal daemon')
     }
   })
 
   it('never refuses on Windows named pipes', () => {
-    // The guard is platform-exempt, so a hypothetical long path is still false.
     const savedPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'win32' })
     try {
-      expect(daemonSocketPathExceedsSunPathBudget(pathOfBytes(MAX_BYTES + 50))).toBe(false)
+      expect(unixSocketPathExceedsSunPathBudget(pathOfBytes(MAX_BYTES + 50))).toBe(false)
     } finally {
       if (savedPlatform) {
         Object.defineProperty(process, 'platform', savedPlatform)
@@ -68,8 +71,8 @@ describe('daemon socket path sun_path budget (#17840)', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' })
     try {
       // 'é' is 2 UTF-8 bytes: 50 chars land at 100 bytes.
-      expect(daemonSocketPathExceedsSunPathBudget('é'.repeat(50))).toBe(false)
-      expect(daemonSocketPathExceedsSunPathBudget('é'.repeat(54))).toBe(true)
+      expect(unixSocketPathExceedsSunPathBudget('é'.repeat(50))).toBe(false)
+      expect(unixSocketPathExceedsSunPathBudget('é'.repeat(54))).toBe(true)
     } finally {
       if (savedPlatform) {
         Object.defineProperty(process, 'platform', savedPlatform)
@@ -86,9 +89,9 @@ describe('DaemonSpawner refuses over-budget endpoints (#17840)', () => {
       const launcher = vi.fn(async () => ({ shutdown: vi.fn(async () => {}) }))
       const spawner = new DaemonSpawner({ runtimeDir: longRoot, launcher })
 
-      await expect(spawner.ensureRunning()).rejects.toThrowError(DaemonSocketPathTooLongError)
+      await expect(spawner.ensureRunning()).rejects.toThrowError(UnixSocketPathTooLongError)
       expect(launcher).not.toHaveBeenCalled()
-      expect(daemonSocketPathExceedsSunPathBudget(getDaemonSocketPath(longRoot))).toBe(true)
+      expect(unixSocketPathExceedsSunPathBudget(getDaemonSocketPath(longRoot))).toBe(true)
     }
   )
 })
@@ -101,6 +104,16 @@ describe('startDaemon refuses over-budget endpoints (#17840)', () => {
         tokenPath: '/tmp/orca-daemon-token',
         spawnSubprocess: () => createMinimalSubprocess()
       })
-    ).rejects.toThrowError(DaemonSocketPathTooLongError)
+    ).rejects.toThrowError(UnixSocketPathTooLongError)
+  })
+})
+
+describe('UnixSocketTransport refuses over-budget endpoints (#17840)', () => {
+  it.skipIf(process.platform === 'win32')('rejects before binding', async () => {
+    const transport = new UnixSocketTransport({
+      endpoint: pathOfBytes(MAX_BYTES + 1),
+      kind: 'unix'
+    })
+    await expect(transport.start()).rejects.toThrowError(UnixSocketPathTooLongError)
   })
 })

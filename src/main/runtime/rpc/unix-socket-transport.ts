@@ -7,6 +7,7 @@
 import { createServer, type Server, type Socket } from 'node:net'
 import { chmodSync, existsSync, rmSync } from 'node:fs'
 import type { RpcMessageContext, RpcTransport } from './transport'
+import { assertUnixSocketPathWithinSunPathBudget } from '../../unix-socket-sun-path-budget'
 
 const MAX_RUNTIME_RPC_MESSAGE_BYTES = 1024 * 1024
 const RUNTIME_RPC_SOCKET_IDLE_TIMEOUT_MS = 30_000
@@ -50,6 +51,12 @@ export class UnixSocketTransport implements RpcTransport {
   async start(): Promise<void> {
     if (this.server) {
       return
+    }
+
+    // Why (#17840): a runtime socket path past sun_path dies in listen() with a
+    // raw EINVAL instead of an actionable error; refuse loudly before binding.
+    if (this.kind === 'unix') {
+      assertUnixSocketPathWithinSunPathBudget('Runtime RPC', this.endpoint)
     }
 
     if (this.kind === 'unix' && existsSync(this.endpoint)) {
