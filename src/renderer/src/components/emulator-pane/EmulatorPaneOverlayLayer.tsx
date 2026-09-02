@@ -1,9 +1,10 @@
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useCallback, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import type { Tab, TabGroup } from '../../../../shared/tab-types'
 import EmulatorPane from './EmulatorPane'
-import { tabGroupBodyAnchorName } from '../tab-group/tab-group-body-anchor'
+import { measuredOverlaySlotBoxStyle } from '../tab-group/overlay-slot-geometry'
+import { useOverlaySlotGeometry } from '../tab-group/use-overlay-slot-geometry'
 
 const EMPTY_UNIFIED_TABS: readonly Tab[] = []
 const EMPTY_GROUPS: readonly TabGroup[] = []
@@ -11,39 +12,46 @@ const EMPTY_GROUPS: readonly TabGroup[] = []
 type SimulatorOverlaySlotProps = {
   tab: Tab
   groupId: string | undefined
+  worktreeId: string
   isActive: boolean
+  isWorktreeActive: boolean
   onFocusOwningGroup: ((groupId: string) => void) | undefined
 }
 
 const SimulatorOverlaySlot = memo(function SimulatorOverlaySlot({
   tab,
   groupId,
+  worktreeId,
   isActive,
+  isWorktreeActive,
   onFocusOwningGroup
 }: SimulatorOverlaySlotProps): React.JSX.Element {
-  const anchorName = groupId !== undefined ? tabGroupBodyAnchorName(groupId) : undefined
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const measuredRect = useOverlaySlotGeometry({
+    overlayRef,
+    groupId,
+    worktreeId,
+    isSurfaceLaidOut: isWorktreeActive
+  })
   const style: React.CSSProperties = useMemo(
     () =>
-      anchorName
+      groupId
         ? {
-            position: 'absolute',
-            positionAnchor: anchorName,
-            top: `anchor(${anchorName} top)`,
-            left: `anchor(${anchorName} left)`,
-            width: `anchor-size(${anchorName} width)`,
-            height: `anchor-size(${anchorName} height)`,
+            ...measuredOverlaySlotBoxStyle(measuredRect),
             zIndex: isActive ? 2 : 1,
             visibility: isActive ? 'visible' : 'hidden',
             pointerEvents: isActive ? 'auto' : 'none'
           }
         : { display: 'none' },
-    [anchorName, isActive]
+    [groupId, isActive, measuredRect]
   )
 
   return (
     <div
+      ref={overlayRef}
       style={style}
       className="orca-emulator-overlay-slot min-h-0 min-w-0 overflow-hidden"
+      data-overlay-geometry="measured"
       onPointerDownCapture={() => {
         if (groupId && onFocusOwningGroup) {
           onFocusOwningGroup(groupId)
@@ -97,7 +105,9 @@ const EmulatorPaneOverlayLayer = memo(function EmulatorPaneOverlayLayer({
             key={tab.id}
             tab={tab}
             groupId={tab.groupId}
+            worktreeId={worktreeId}
             isActive={isActive}
+            isWorktreeActive={isWorktreeActive}
             onFocusOwningGroup={focusOwningGroup}
           />
         )

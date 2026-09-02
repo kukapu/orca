@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useCallback, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Tab, TabGroup } from '../../../../shared/tab-types'
 import { isAgentSessionHandleProvider } from '../../../../shared/agent-session-provider-handle'
@@ -8,7 +8,8 @@ import {
   getRuntimeEnvironmentIdForWorktree
 } from '@/lib/worktree-runtime-owner'
 import { getActiveRuntimeTarget, type RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
-import { tabGroupBodyAnchorName } from '../tab-group/tab-group-body-anchor'
+import { measuredOverlaySlotBoxStyle } from '../tab-group/overlay-slot-geometry'
+import { useOverlaySlotGeometry } from '../tab-group/use-overlay-slot-geometry'
 import NativeChatView from './NativeChatView'
 
 type StructuredAgentSessionTab = Tab & {
@@ -22,34 +23,39 @@ const EMPTY_GROUPS: readonly TabGroup[] = []
 const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOverlaySlot({
   tab,
   groupId,
+  worktreeId,
   isActive,
+  isWorktreeActive,
   target,
   allowFileUriLinks,
   onFocusOwningGroup
 }: {
   tab: StructuredAgentSessionTab
   groupId: string | undefined
+  worktreeId: string
   isActive: boolean
+  isWorktreeActive: boolean
   target: RuntimeClientTarget
   allowFileUriLinks: boolean
   onFocusOwningGroup: ((groupId: string) => void) | undefined
 }): React.JSX.Element {
-  const anchorName = groupId !== undefined ? tabGroupBodyAnchorName(groupId) : undefined
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const measuredRect = useOverlaySlotGeometry({
+    overlayRef,
+    groupId,
+    worktreeId,
+    isSurfaceLaidOut: isWorktreeActive
+  })
   const style = useMemo<React.CSSProperties>(
     () =>
-      anchorName
+      groupId
         ? {
-            position: 'absolute',
-            positionAnchor: anchorName,
-            top: `anchor(${anchorName} top)`,
-            left: `anchor(${anchorName} left)`,
-            width: `anchor-size(${anchorName} width)`,
-            height: `anchor-size(${anchorName} height)`,
+            ...measuredOverlaySlotBoxStyle(measuredRect),
             display: isActive ? 'flex' : 'none',
             pointerEvents: isActive ? 'auto' : 'none'
           }
         : { display: 'none' },
-    [anchorName, isActive]
+    [groupId, isActive, measuredRect]
   )
   const focusOwningGroup = useCallback(() => {
     if (groupId !== undefined && onFocusOwningGroup) {
@@ -59,9 +65,11 @@ const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOv
 
   return (
     <div
+      ref={overlayRef}
       style={style}
       className="native-chat-pane-shell z-10 min-h-0 min-w-0"
       data-structured-agent-session-overlay-tab-id={tab.id}
+      data-overlay-geometry="measured"
       aria-hidden={!isActive}
       onPointerDown={focusOwningGroup}
       onFocusCapture={focusOwningGroup}
@@ -125,7 +133,9 @@ const StructuredAgentSessionPaneOverlayLayer = memo(
             key={tab.id}
             tab={tab}
             groupId={tab.groupId}
+            worktreeId={worktreeId}
             isActive={Boolean(isWorktreeActive && groupActiveTabById.get(tab.groupId) === tab.id)}
+            isWorktreeActive={isWorktreeActive}
             target={target}
             allowFileUriLinks={allowFileUriLinks}
             onFocusOwningGroup={focusOwningGroup}

@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { registerBrowserOverlaySlotViewport } from '../host-guest/browser-page-viewport'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../../../store'
@@ -6,7 +6,8 @@ import type { BrowserTab as BrowserTabState } from '../../../../../shared/browse
 import type { Tab, TabGroup } from '../../../../../shared/tab-types'
 import BrowserPane from './browser-workspace-pane'
 import type { BrowserChromeShortcutScope } from '../describe-page/browser-page-types'
-import { tabGroupBodyAnchorName } from '../../tab-group/tab-group-body-anchor'
+import { measuredOverlaySlotBoxStyle } from '../../tab-group/overlay-slot-geometry'
+import { useOverlaySlotGeometry } from '../../tab-group/use-overlay-slot-geometry'
 import { useBrowserGuestPaintRetention } from '../host-guest/browser-guest-paint-retention'
 import {
   isClientHostedBrowserRowSelectionLive,
@@ -15,7 +16,7 @@ import {
 } from '@/lib/pane-manager/client-hosted-browser-row-state'
 import { ClientHostedBrowserHostRowPane } from '../client-hosted-browser-host-row-pane'
 
-// Why: Electron <webview> destroys its guest on DOM reparent, so BrowserPanes render at worktree level and moving a tab between groups only swaps the overlay's CSS position-anchor.
+// Why: Electron <webview> destroys its guest on DOM reparent, so BrowserPanes render at worktree level and moving a tab between groups only retargets measured overlay geometry.
 
 type BrowserOverlayAssignment = {
   groupId: string
@@ -30,6 +31,7 @@ type BrowserOverlaySlotProps = {
   browserTab: BrowserTabState
   // Why: undefined = orphan tab (in browserTabs but not referenced by any group's unified-tab list); the fallback branch keeps these hidden.
   groupId: string | undefined
+  worktreeId: string
   isActive: boolean
   chromeShortcutScope: BrowserChromeShortcutScope
   // Why: overlay is a sibling of the group layout, so pane focus doesn't bubble to TabGroupPanel; re-sync it here or split-view clicks leave activeGroupIdByWorktree stale.
@@ -41,6 +43,7 @@ type BrowserOverlaySlotProps = {
 const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
   browserTab,
   groupId,
+  worktreeId,
   isActive,
   chromeShortcutScope,
   onFocusOwningGroup,
@@ -53,7 +56,13 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
     },
     [browserTab.id]
   )
-  const anchorName = groupId !== undefined ? tabGroupBodyAnchorName(groupId) : undefined
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const measuredRect = useOverlaySlotGeometry({
+    overlayRef,
+    groupId,
+    worktreeId,
+    isSurfaceLaidOut: isWorktreeActive
+  })
   const browserPageIds =
     browserTab.pageIds && browserTab.pageIds.length > 0
       ? browserTab.pageIds
@@ -62,18 +71,13 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
   const isPaintable = isActive || needsGuestPaint
   // Why: hidden worktrees keep lightweight overlay slots, but park their webviews unless a remote controller or viewer needs the guest.
   const shouldMountPane = isWorktreeActive || needsGuestPaint
-  // Why: CSS anchor positioning pins the overlay to its owning group's body — a tab move only swaps positionAnchor, no measurement/state.
-  // Orphan branch (no anchorName) stays display:none until the tab is reassigned or destroyed.
+  // Why: measured body pixels — CSS anchors can paint a cut-off box while
+  // hit-testing the full pane. Orphans stay display:none until reassigned.
   const style: React.CSSProperties = useMemo(
     () =>
-      anchorName
+      groupId
         ? {
-            position: 'absolute',
-            positionAnchor: anchorName,
-            top: `anchor(${anchorName} top)`,
-            left: `anchor(${anchorName} left)`,
-            width: `anchor-size(${anchorName} width)`,
-            height: `anchor-size(${anchorName} height)`,
+            ...measuredOverlaySlotBoxStyle(measuredRect),
             display: isPaintable ? 'flex' : 'none',
             pointerEvents: isActive ? 'auto' : 'none',
             opacity: isActive ? 1 : 0
@@ -87,7 +91,7 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
             display: 'none',
             pointerEvents: 'none'
           },
-    [anchorName, isActive, isPaintable]
+    [groupId, isActive, isPaintable, measuredRect]
   )
   const handleFocus = useCallback(() => {
     if (groupId !== undefined && onFocusOwningGroup) {
@@ -97,9 +101,11 @@ const BrowserOverlaySlot = memo(function BrowserOverlaySlot({
 
   return (
     <div
+      ref={overlayRef}
       style={style}
       className="relative flex min-h-0 flex-1 flex-col"
       data-browser-overlay-tab-id={browserTab.id}
+      data-overlay-geometry="measured"
       onPointerDown={handleFocus}
       onFocusCapture={handleFocus}
     >
@@ -189,6 +195,7 @@ const BrowserPaneOverlayLayer = memo(function BrowserPaneOverlayLayer({
             key={browserTab.id}
             browserTab={browserTab}
             groupId={assignment?.groupId}
+            worktreeId={worktreeId}
             isActive={isActive}
             chromeShortcutScope={chromeShortcutScope}
             onFocusOwningGroup={focusOwningGroup}
@@ -226,30 +233,28 @@ function ClientHostedBrowserRowOverlaySlot({
   const selectedRow = liveSelection
     ? rows.find((row) => row.browserPageId === liveSelection.browserPageId)
     : undefined
-  const anchorName =
-    selectedRow && liveSelection ? tabGroupBodyAnchorName(liveSelection.groupId) : undefined
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const groupId = selectedRow && liveSelection ? liveSelection.groupId : undefined
+  const measuredRect = useOverlaySlotGeometry({
+    overlayRef,
+    groupId,
+    worktreeId,
+    isSurfaceLaidOut: isWorktreeActive
+  })
   const style = useMemo<React.CSSProperties | null>(
-    () =>
-      anchorName
-        ? {
-            position: 'absolute',
-            positionAnchor: anchorName,
-            top: `anchor(${anchorName} top)`,
-            left: `anchor(${anchorName} left)`,
-            width: `anchor-size(${anchorName} width)`,
-            height: `anchor-size(${anchorName} height)`
-          }
-        : null,
-    [anchorName]
+    () => (groupId ? measuredOverlaySlotBoxStyle(measuredRect) : null),
+    [groupId, measuredRect]
   )
   if (!selectedRow || !style || !isWorktreeActive) {
     return null
   }
   return (
     <div
+      ref={overlayRef}
       style={style}
       className="flex min-h-0 flex-col"
       data-client-hosted-browser-host-row-pane={selectedRow.browserPageId}
+      data-overlay-geometry="measured"
     >
       <ClientHostedBrowserHostRowPane row={selectedRow} />
     </div>

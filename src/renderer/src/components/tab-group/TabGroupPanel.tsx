@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from 'react'
+import { Suspense } from 'react'
 import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
 import { useDroppable } from '@dnd-kit/core'
 import { Ellipsis, X } from 'lucide-react'
@@ -17,7 +17,6 @@ import { useTabGroupWorkspaceModel } from './useTabGroupWorkspaceModel'
 import { closeTerminalTab } from '../terminal/terminal-tab-actions'
 import { resolveGroupTabFromVisibleId } from './tab-group-visible-id'
 import { getTabPaneBodyDroppableId, type HoveredTabInsertion } from './useTabDragSplit'
-import { tabGroupBodyAnchorName } from './tab-group-body-anchor'
 import { translate } from '@/i18n/i18n'
 import type { TabGroup } from '../../../../shared/tab-types'
 import type { ClientHostedBrowserRow } from '../../../../shared/client-hosted-browser-rows'
@@ -93,13 +92,6 @@ export default function TabGroupPanel({
     },
     disabled: !isTabDragActive
   })
-  // Why: per-group anchor-name lets the worktree-level overlay position panes via CSS anchor positioning, so moving a tab between groups re-targets the anchor instead of remounting xterm (loses alt-screen TUI state) or reloading `<webview>`.
-  const bodyAnchorName = tabGroupBodyAnchorName(groupId)
-  // Why: memoize so a fresh style object each render doesn't break downstream memoization keyed on referential equality.
-  const bodyAnchorStyle = useMemo(
-    () => ({ anchorName: bodyAnchorName }) as React.CSSProperties,
-    [bodyAnchorName]
-  )
 
   const tabBar = (
     <TabBar
@@ -338,7 +330,6 @@ export default function TabGroupPanel({
         data-tab-group-body-id={groupId}
         data-worktree-id={worktreeId}
         className="relative flex-1 min-h-0 overflow-hidden"
-        style={bodyAnchorStyle}
       >
         {/* Why: empty anchor so the agent-sessions tour reads as a terminal-area tip, not toolbar chrome. */}
         {isFocused ? (
