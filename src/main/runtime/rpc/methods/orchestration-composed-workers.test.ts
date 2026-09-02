@@ -125,6 +125,129 @@ describe('orchestration RPC methods', () => {
       expect(db.getDispatchContext(task.id)).toBeDefined()
     })
 
+    it('rejects with agent_not_available before creating any worker resources when the execution host lacks the agent CLI', async () => {
+      setup()
+      mockCurrentWorkerStart()
+      const task = db.createTask({ spec: 'fence unavailable agent' })
+      vi.spyOn(runtime, 'assertAgentLaunchableOnWorkspaceHost').mockRejectedValue(
+        Object.assign(new Error('Agent claude was not detected on the local execution host.'), {
+          code: 'agent_not_available'
+        })
+      )
+
+      await expect(
+        call('orchestration.workerStart', {
+          task: task.id,
+          from: 'term_coord',
+          agent: 'claude'
+        })
+      ).rejects.toMatchObject({ code: 'agent_not_available' })
+      expect(db.getDispatchContext(task.id)).toBeUndefined()
+      expect(runtime.createTerminal).not.toHaveBeenCalled()
+    })
+
+    it('checks availability against the coordinator worktree host for the current worktree', async () => {
+      setup()
+      mockCurrentWorkerStart()
+      const availability = vi
+        .spyOn(runtime, 'assertAgentLaunchableOnWorkspaceHost')
+        .mockResolvedValue()
+      const task = db.createTask({ spec: 'availability selector current' })
+
+      await call('orchestration.workerStart', {
+        task: task.id,
+        from: 'term_coord',
+        agent: 'codex'
+      })
+
+      expect(availability).toHaveBeenCalledWith('codex', 'id:repo::worktree')
+    })
+
+    it('checks availability against the requested worktree host for an explicit selector', async () => {
+      setup()
+      mockCurrentWorkerStart()
+      const availability = vi
+        .spyOn(runtime, 'assertAgentLaunchableOnWorkspaceHost')
+        .mockResolvedValue()
+      const task = db.createTask({ spec: 'availability selector explicit' })
+
+      await call('orchestration.workerStart', {
+        task: task.id,
+        from: 'term_coord',
+        agent: 'codex',
+        worktree: 'id:repo::explicit'
+      })
+
+      expect(availability).toHaveBeenCalledWith('codex', 'id:repo::explicit')
+    })
+
+    it('skips the availability fence when reusing an already-running agent terminal', async () => {
+      setup()
+      mockCurrentWorkerStart()
+      vi.spyOn(runtime, 'isTerminalRunningAgent').mockResolvedValue(true)
+      const workspaceFence = vi
+        .spyOn(runtime, 'assertAgentLaunchableOnWorkspaceHost')
+        .mockResolvedValue()
+      const repoFence = vi.spyOn(runtime, 'assertAgentLaunchableOnRepoHost').mockResolvedValue()
+      const task = db.createTask({ spec: 'reuse skips the fence' })
+
+      const result = (await call('orchestration.workerStart', {
+        task: task.id,
+        from: 'term_coord',
+        terminal: 'term_worker'
+      })) as { state: string }
+
+      expect(result.state).toBe('ready')
+      expect(workspaceFence).not.toHaveBeenCalled()
+      expect(repoFence).not.toHaveBeenCalled()
+    })
+
+    it('fences new-worktree starts against the requested repo host, not the coordinator host', async () => {
+      setup()
+      mockCurrentWorkerStart()
+      vi.spyOn(runtime, 'showRepo').mockResolvedValue({ id: 'repo-1', kind: 'git' } as never)
+      vi.spyOn(runtime, 'assertAgentLaunchableOnRepoHost').mockRejectedValue(
+        Object.assign(new Error('Agent claude was not detected on the local execution host.'), {
+          code: 'agent_not_available'
+        })
+      )
+      const task = db.createTask({ spec: 'cross-host new worktree' })
+
+      await expect(
+        call('orchestration.workerStart', {
+          task: task.id,
+          from: 'term_coord',
+          agent: 'claude',
+          worktree: 'new-child',
+          name: 'child'
+        })
+      ).rejects.toMatchObject({ code: 'agent_not_available' })
+      expect(runtime.createTerminal).not.toHaveBeenCalled()
+    })
+
+    it('checks the requested repo host for new-worktree starts', async () => {
+      setup()
+      mockCurrentWorkerStart()
+      vi.spyOn(runtime, 'showRepo').mockResolvedValue({ id: 'other-repo', kind: 'git' } as never)
+      const repoFence = vi.spyOn(runtime, 'assertAgentLaunchableOnRepoHost').mockResolvedValue()
+      const workspaceFence = vi
+        .spyOn(runtime, 'assertAgentLaunchableOnWorkspaceHost')
+        .mockResolvedValue()
+      const task = db.createTask({ spec: 'repo host selector' })
+
+      await call('orchestration.workerStart', {
+        task: task.id,
+        from: 'term_coord',
+        agent: 'codex',
+        worktree: 'new-child',
+        name: 'child',
+        repo: 'id:other-repo'
+      })
+
+      expect(repoFence).toHaveBeenCalledWith('codex', 'id:other-repo')
+      expect(workspaceFence).not.toHaveBeenCalled()
+    })
+
     it('starts a fresh agent in the coordinator current worktree', async () => {
       setup()
       mockCurrentWorkerStart()

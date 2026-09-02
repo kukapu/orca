@@ -108,6 +108,11 @@ async function createPromptContractHarness(
     candidate === handle ? `runtime_test:${handle}:1` : null
   )
   vi.spyOn(runtime, 'validateOrchestrationAgentLauncher').mockImplementation(() => {})
+  // Why: this fixture's synthetic store resolves the coordinator repo, so the
+  // real fence would run live agent detection under fake timers. Prompt-submission
+  // behavior is what these tests assert; availability is spied out.
+  vi.spyOn(runtime, 'assertAgentLaunchableOnWorkspaceHost').mockResolvedValue()
+  vi.spyOn(runtime, 'assertAgentLaunchableOnRepoHost').mockResolvedValue()
   vi.spyOn(runtime, 'showTerminal').mockResolvedValue({
     handle: 'term_coord',
     worktreeId: 'repo::parent',

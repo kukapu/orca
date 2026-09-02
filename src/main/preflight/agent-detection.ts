@@ -238,17 +238,34 @@ export async function refreshShellPathAndDetectAgents(
   }
 }
 
-export async function detectRemoteAgents(args: { connectionId: string }): Promise<string[]> {
+export type RemoteAgentDetection =
+  | { status: 'answered'; agents: string[] }
+  | { status: 'unreachable' }
+
+/**
+ * Ask a connected SSH host which agents it has, distinguishing "host answered"
+ * from "host unreachable". Callers that would turn the answer into a claim
+ * about the host (not just UI state) must fail open on `unreachable` — loss of
+ * contact is never evidence of absence (docs/reference/ssh-execution-boundary.md).
+ */
+export async function detectRemoteAgentsStatus(args: {
+  connectionId: string
+}): Promise<RemoteAgentDetection> {
   const mux = getActiveMultiplexer(args.connectionId)
   if (!mux || mux.isDisposed()) {
-    // Why: remote agent detection is passive UI polling. A disconnected host has
-    // no detectable agents until reconnect, but should not spam IPC errors.
-    return []
+    return { status: 'unreachable' }
   }
   const result = (await mux.request('preflight.detectAgents', {
     commands: KNOWN_TUI_AGENT_DETECTION_COMMANDS
   })) as { agents: string[] }
-  return uniqueAgentIds(result.agents)
+  return { status: 'answered', agents: uniqueAgentIds(result.agents) }
+}
+
+export async function detectRemoteAgents(args: { connectionId: string }): Promise<string[]> {
+  // Why: remote agent detection is passive UI polling. A disconnected host has
+  // no detectable agents until reconnect, but should not spam IPC errors.
+  const detection = await detectRemoteAgentsStatus(args)
+  return detection.status === 'answered' ? detection.agents : []
 }
 
 async function isGhAuthenticated(wslTarget?: WslPreflightTarget): Promise<boolean> {

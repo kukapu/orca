@@ -61,6 +61,17 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS: RpcMethod[] = [
         })
       }
 
+      if (agent && !params.terminal) {
+        // Why (#17943): this handler runs ON the worker server, so the fence
+        // below is the remote-server execution host. Fence before the remote
+        // attachment record exists so a missing agent CLI costs nothing.
+        if (createsWorktree) {
+          await runtime.assertAgentLaunchableOnRepoHost(agent, params.repo as string)
+        } else if (params.worktree) {
+          await runtime.assertAgentLaunchableOnWorkspaceHost(agent, params.worktree)
+        }
+      }
+
       const db = runtime.getOrchestrationDb()
       db.createRemoteDispatchAttachment({
         dispatchId: params.dispatchId,

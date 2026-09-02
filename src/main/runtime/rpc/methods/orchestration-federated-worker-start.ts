@@ -277,6 +277,9 @@ function isKnownRemoteStartFailure(code: string): boolean {
   return [
     'invalid_argument',
     'agent_unconfigured',
+    // Why: a definitive host verdict must settle as failed, not retry as
+    // outcome_unknown — the agent will still be missing on the next attempt.
+    'agent_not_available',
     'worktree_not_found_on_server',
     'terminal_worktree_mismatch',
     'capability_unsupported'

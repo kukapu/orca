@@ -4,6 +4,7 @@ import { OrchestrationError } from '../../orchestration/orchestration-error'
 import { defineMethod, type RpcMethod } from '../core'
 import { startFederatedWorker } from './orchestration-federated-worker-start'
 import { assertOrchestrationWorktreeCreationSupported } from './orchestration-folder-worktree-placement'
+import { fenceWorkerStartAgent } from './orchestration-worker-agent-availability'
 import { WorkerStartParams } from './orchestration-worker-start-schema'
 import {
   createExistingWorktreeWorkerTerminal,
@@ -112,6 +113,12 @@ export const ORCHESTRATION_WORKER_START_METHODS: RpcMethod[] = [
           )
         }
       }
+
+      await fenceWorkerStartAgent(runtime, agent, params, {
+        createsWorktree,
+        creationWorktreeRepoId: creationWorktree?.repoId,
+        coordinatorWorktreeId: coordinatorTerminal.worktreeId
+      })
 
       const startOptions = {
         worktree: requestedWorktree,
