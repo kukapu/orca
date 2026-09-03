@@ -30,7 +30,7 @@ POLÍTICA DE CONFLICTOS (importante): si upstream implementa (de forma distinta)
 
 5) Push: solo si TODO pasa: `git push origin HEAD:main-kukapu`. Nunca force push, nunca reescribas historia del remote. Si tras los reintentos razonables no compila/pasa tests: NO pushees nada; deja tu trabajo commiteado en la rama del worktree y ejecuta `orca worktree set --worktree active --comment` con un resumen del bloqueo.
 
-6) Checkout principal: al final, en /home/kukapu/dev/projects/orca haz `git fetch origin` y, solo si está limpio y en main-kukapu, `git pull --ff-only`. Si se ensució durante la corrida o está en otra rama, no lo toques: repórtalo.
+6) Checkout principal: al final, en /home/kukapu/dev/projects/orca haz `git fetch origin` y, solo si está limpio y en main-kukapu, `git pull --ff-only origin main-kukapu` (origen explícito: el tracking local podría apuntar a upstream/main y el pull a ciegas fallaría). Si se ensució durante la corrida o está en otra rama, no lo toques: repórtalo.
 
 7) Resumen final: limpieza del paso 0; WIP rescatado y commits generados; commits de upstream integrados; conflictos resueltos y política aplicada (sobre todo, qué comportamientos del fork cedieron ante upstream); fixes aplicados; resultado de verificación; push sí/no.
 
@@ -42,3 +42,4 @@ Reglas transversales: sigue el AGENTS.md del repo; nunca elimines el worktree ac
 - Validado manualmente en la corrida del 2026-09-02: merge de 86 commits de upstream sin conflictos, rescate de WIP del checkout principal (fence de agentes #17943 + geometría de overlays) portado en 4 commits, gates de max-lines resueltos por refactor, verificación en verde y push a `origin/main-kukapu`.
 - El paso 1 existe porque el trabajo en curso suele vivir sin commitear en el checkout principal; el snapshot en rama temporal es la red de seguridad para no perder nada.
 - Cuando upstream absorba definitivamente los cambios del fork y el fork deje de tener cambios propios, esta automatización sobra: se puede retirar.
+- Corrida 2026-09-03: el paso 6 fallaba porque main-kukapu en el checkout principal trackeaba `upstream/main`; se fijó a `origin/main-kukapu` y el paso usa origen explícito desde entonces. Aclarado además que los tags `v*` (p. ej. v1.4.196) salen de una línea de release anterior a la punta de `upstream/main`: el fork sigue a `upstream/main`, no a los tags.
