@@ -1,4 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as ptyShellUtils from './pty-shell-utils'
 
 const { mockPtySpawn, mockPtyInstance, mockCreateShellPromptReadinessProbe } = vi.hoisted(() => ({
@@ -85,6 +88,21 @@ describe('PtyHandler', () => {
     // register a no-op here, which survived only because the consumer session adapter was
     // constructed later and overwrote it (STA-4571).
     expect(notifMethods).not.toContain('pty.ackData')
+  })
+
+  it('rescans the process table for a close decision but not for a poll', async () => {
+    const hasChildren = vi.mocked(ptyShellUtils.processHasChildren)
+    const { id } = (await spawnPty({ cols: 80, rows: 24 })) as { id: string }
+    hasChildren.mockClear()
+
+    await dispatcher.callRequest('pty.inspectProcess', { id })
+    // The poll shares the TTL-cached table the foreground lookup already took.
+    expect(hasChildren).toHaveBeenLastCalledWith(mockPtyInstance.pid)
+
+    await dispatcher.callRequest('pty.hasChildProcesses', { id })
+    // This RPC only ever gates a destructive decision (window close, workspace
+    // cleanup), so it has to see a child started inside the 500ms window.
+    expect(hasChildren).toHaveBeenLastCalledWith(mockPtyInstance.pid, { fresh: true })
   })
 
   it('rejects strict process inspection for a missing relay PTY', async () => {
@@ -391,6 +409,28 @@ describe('PtyHandler', () => {
     expect(beginWorktreePtySpawn).toHaveBeenCalledWith(expect.any(String))
     expect(beginWorktreePtySpawn.mock.calls[0][0]).not.toBe('')
     expect(finishCreation).toHaveBeenCalledTimes(1)
+  })
+
+  // requireRelaySpawnCwd strips the `::workspace:<uuid>` instance suffix to get the real folder
+  // path, so a fence keyed on the unstripped id would guard a directory no spawn ever uses --
+  // exactly what routing both through one resolver is supposed to make impossible.
+  it('fences a folder-workspace instance id on the directory the spawn will use', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'orca-relay-fence-'))
+    try {
+      const finishCreation = vi.fn()
+      const beginWorktreePtySpawn = vi.fn((_operationPath: string) => finishCreation)
+      handler.setWorktreeRemovalCoordinator({ beginWorktreePtySpawn })
+
+      await dispatcher.callRequest('pty.spawn', {
+        worktreeId: `repo-1::${workspaceRoot}::workspace:b1706d92-9d05-4932-8360-01e00b54305a`
+      })
+
+      const fencedPaths = beginWorktreePtySpawn.mock.calls.map((call) => call[0])
+      expect(fencedPaths).toContain(workspaceRoot)
+      expect(fencedPaths.some((fenced) => fenced.includes('::workspace:'))).toBe(false)
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true })
+    }
   })
 
   it('fences both sibling worktree identity and removing cwd with rollback', async () => {
