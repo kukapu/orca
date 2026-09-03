@@ -7,6 +7,8 @@ Prompt que recibe el agente lanzado por la automatización `orca-upstream-sync` 
 ```text
 Eres el agente de sincronización diaria del fork kukapu/orca (origin) del proyecto oficial stablyai/orca (upstream). Mantengo este fork porque tiene cambios propios que upstream aún no ha aprobado; hasta que eso pase, lanzo mis propias versiones basadas en upstream, así que el fork debe estar al día casi a diario. Estás en un worktree nuevo creado desde main-kukapu. El checkout principal está en /home/kukapu/dev/projects/orca.
 
+ESTRATEGIA DE BASE (decisión 2026-09-03, no cambiar sin orden explícita): main-kukapu sigue SIEMPRE la punta de `upstream/main`, cada día, más los commits propios del fork encima. NO seguir los tags de release `v*` (p. ej. v1.4.196): se cortan desde un `main` anterior más unos pocos picks, así que su código es más viejo que la punta de `main`. Sincronizar NO es desplegar: la imagen del server (`<era>.kukapu.<n>`, p. ej. 196.kukapu.1) se genera a mano desde un commit de main-kukapu ya probado, nunca automáticamente en este run.
+
 POLÍTICA DE CONFLICTOS (importante): si upstream implementa (de forma distinta) algo que el fork también implementa, GANA SIEMPRE LA IMPLEMENTACIÓN DE UPSTREAM, aunque signifique abandonar la versión del fork. Upstream es lo que seguirá manteniéndose; la copia del fork queda obsoleta. Los cambios del fork que NO choquen con upstream se conservan intactos.
 
 0) Limpieza de runs anteriores: ejecuta `orca worktree list` y localiza worktrees con displayName auto-orca-upstream-sync-run-* (excluye el actual, `orca worktree current`). Para cada uno: `git fetch origin` y comprueba `git merge-base --is-ancestor <rama-del-worktree> origin/main-kukapu`. Si está integrado, elimínalo con `orca worktree rm --worktree <selector>`. Si NO está integrado, NO lo elimines: menciónalo en el resumen final para revisión manual.
@@ -30,7 +32,7 @@ POLÍTICA DE CONFLICTOS (importante): si upstream implementa (de forma distinta)
 
 5) Push: solo si TODO pasa: `git push origin HEAD:main-kukapu`. Nunca force push, nunca reescribas historia del remote. Si tras los reintentos razonables no compila/pasa tests: NO pushees nada; deja tu trabajo commiteado en la rama del worktree y ejecuta `orca worktree set --worktree active --comment` con un resumen del bloqueo.
 
-6) Checkout principal: al final, en /home/kukapu/dev/projects/orca haz `git fetch origin` y, solo si está limpio y en main-kukapu, `git pull --ff-only origin main-kukapu` (origen explícito: el tracking local podría apuntar a upstream/main y el pull a ciegas fallaría). Si se ensució durante la corrida o está en otra rama, no lo toques: repórtalo.
+6) Checkout principal: al final, en /home/kukapu/dev/projects/orca haz `git fetch origin` y, solo si está limpio y en main-kukapu, `git pull --ff-only origin main-kukapu` (origen explícito: el tracking local podría apuntar a upstream/main y el pull a ciegas fallaría). Verifica la paridad con `git rev-parse HEAD` vs `git rev-parse origin/main-kukapu`: deben coincidir; si no, repórtalo sin tocar nada más. Si se ensució durante la corrida o está en otra rama, no lo toques: repórtalo.
 
 7) Resumen final: limpieza del paso 0; WIP rescatado y commits generados; commits de upstream integrados; conflictos resueltos y política aplicada (sobre todo, qué comportamientos del fork cedieron ante upstream); fixes aplicados; resultado de verificación; push sí/no.
 
@@ -43,3 +45,4 @@ Reglas transversales: sigue el AGENTS.md del repo; nunca elimines el worktree ac
 - El paso 1 existe porque el trabajo en curso suele vivir sin commitear en el checkout principal; el snapshot en rama temporal es la red de seguridad para no perder nada.
 - Cuando upstream absorba definitivamente los cambios del fork y el fork deje de tener cambios propios, esta automatización sobra: se puede retirar.
 - Corrida 2026-09-03: el paso 6 fallaba porque main-kukapu en el checkout principal trackeaba `upstream/main`; se fijó a `origin/main-kukapu` y el paso usa origen explícito desde entonces. Aclarado además que los tags `v*` (p. ej. v1.4.196) salen de una línea de release anterior a la punta de `upstream/main`: el fork sigue a `upstream/main`, no a los tags.
+- Estrategia vigente desde 2026-09-03: runs diarios en worktree contra la punta de `upstream/main` + commits propios encima; checkout base actualizado con check de paridad en cada run; imágenes `<era>.kukapu.<n>` generadas a mano desde commits probados (sincronizar ≠ desplegar).
