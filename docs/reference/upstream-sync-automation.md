@@ -11,8 +11,6 @@ ESTRATEGIA DE BASE (decisión 2026-09-03, no cambiar sin orden explícita): main
 
 POLÍTICA DE CONFLICTOS (importante): si upstream implementa (de forma distinta) algo que el fork también implementa, GANA SIEMPRE LA IMPLEMENTACIÓN DE UPSTREAM, aunque signifique abandonar la versión del fork. Upstream es lo que seguirá manteniéndose; la copia del fork queda obsoleta. Los cambios del fork que NO choquen con upstream se conservan intactos.
 
-0) Limpieza de runs anteriores: ejecuta `orca worktree list` y localiza worktrees con displayName auto-orca-upstream-sync-run-* (excluye el actual, `orca worktree current`). Para cada uno: `git fetch origin` y comprueba `git merge-base --is-ancestor <rama-del-worktree> origin/main-kukapu`. Si está integrado, elimínalo con `orca worktree rm --worktree <selector>`. Si NO está integrado, NO lo elimines: menciónalo en el resumen final para revisión manual.
-
 1) Rescate de trabajo pendiente (hazlo ANTES de traer upstream): en /home/kukapu/dev/projects/orca ejecuta `git status`. Si hay cambios sin commitear (incluidos untracked), es trabajo mío aún no portado: pásalo a main-kukapu así:
    a. En ese checkout crea una rama temporal (p. ej. kukapu/wip-port-<fecha>), `git add -A` y haz un commit-snapshot fiel (puede usar --no-verify SOLO aquí).
    b. Vuelve a main-kukapu y haz `git pull --ff-only origin main-kukapu` (el árbol ya está limpio tras el snapshot).
@@ -23,7 +21,7 @@ POLÍTICA DE CONFLICTOS (importante): si upstream implementa (de forma distinta)
    Si el checkout está limpio pero no está en main-kukapu, o está en medio de un rebase/merge: NO lo toques, repórtalo.
    Si `pnpm install` reescribe pnpm-lock.yaml (p. ej. normaliza hashes de patches con pnpm 12), commitea esa normalización como `chore:` — hay precedente en la historia del fork.
 
-2) Traer upstream: de vuelta en tu worktree de ejecución, `git fetch origin && git merge --ff-only origin/main-kukapu` para alinearte (por si el paso 1 pusheó algo), luego `git fetch upstream main && git merge upstream/main`. Si responde "Already up to date", termina reportando que el fork ya está al día (incluye el resultado del paso 0 y del 1).
+2) Traer upstream: de vuelta en tu worktree de ejecución, `git fetch origin && git merge --ff-only origin/main-kukapu` para alinearte (por si el paso 1 pusheó algo), luego `git fetch upstream main && git merge upstream/main`. Si responde "Already up to date", termina reportando que el fork ya está al día (incluye el resultado del paso 1).
    - Aunque el merge sea limpio, calcula el merge-base previo y lista los ficheros tocados por AMBOS lados: son candidatos a conflicto semántico; verifica esos puntos manualmente y ejecuta tests de esas áreas.
 
 3) Conflictos: resuélvelos aceptando upstream por defecto; conserva el comportamiento del fork SOLO donde no exista equivalente upstream. Si descartas una feature/behavior del fork porque upstream lo implementa de otro modo, indícalo explícitamente en el mensaje del commit de merge y en el resumen final (si hay docs del fork sobre esa feature, docs/fixes, no las reescribas: menciónalo para revisión manual). Asegúrate de que imports/tipos quedan consistentes tras resolver.
@@ -34,7 +32,7 @@ POLÍTICA DE CONFLICTOS (importante): si upstream implementa (de forma distinta)
 
 6) Checkout principal: al final, en /home/kukapu/dev/projects/orca haz `git fetch origin` y, solo si está limpio y en main-kukapu, `git pull --ff-only origin main-kukapu` (origen explícito: el tracking local podría apuntar a upstream/main y el pull a ciegas fallaría). Verifica la paridad con `git rev-parse HEAD` vs `git rev-parse origin/main-kukapu`: deben coincidir; si no, repórtalo sin tocar nada más. Si se ensució durante la corrida o está en otra rama, no lo toques: repórtalo.
 
-7) Resumen final: limpieza del paso 0; WIP rescatado y commits generados; commits de upstream integrados; conflictos resueltos y política aplicada (sobre todo, qué comportamientos del fork cedieron ante upstream); fixes aplicados; resultado de verificación; push sí/no.
+7) Resumen final: WIP rescatado y commits generados; commits de upstream integrados; conflictos resueltos y política aplicada (sobre todo, qué comportamientos del fork cedieron ante upstream); fixes aplicados; resultado de verificación; push sí/no. Ejecuta `date '+%A, %Y-%m-%d'` y cierra el resumen con una línea "Día y fecha de ejecución: <resultado>".
 
 Reglas transversales: sigue el AGENTS.md del repo; nunca elimines el worktree actual ni el checkout principal; mensajes de commit claros y convencionales; no hagas escaneos git sin acotar (--all sin filtro); si dudas entre conservar algo del fork o coger upstream, gana upstream y documéntalo.
 ```
@@ -46,3 +44,4 @@ Reglas transversales: sigue el AGENTS.md del repo; nunca elimines el worktree ac
 - Cuando upstream absorba definitivamente los cambios del fork y el fork deje de tener cambios propios, esta automatización sobra: se puede retirar.
 - Corrida 2026-09-03: el paso 6 fallaba porque main-kukapu en el checkout principal trackeaba `upstream/main`; se fijó a `origin/main-kukapu` y el paso usa origen explícito desde entonces. Aclarado además que los tags `v*` (p. ej. v1.4.196) salen de una línea de release anterior a la punta de `upstream/main`: el fork sigue a `upstream/main`, no a los tags.
 - Estrategia vigente desde 2026-09-03: runs diarios en worktree contra la punta de `upstream/main` + commits propios encima; checkout base actualizado con check de paridad en cada run; imágenes `<era>.kukapu.<n>` generadas a mano desde commits probados (sincronizar ≠ desplegar).
+- 2026-09-05: eliminado el paso de limpieza de runs anteriores (antiguo paso 0): al cerrar la ventana del run, Orca elimina su worktree, así que la limpieza manual sobraba. El resumen final debe cerrarse con el día de la semana y la fecha de ejecución (`date '+%A, %Y-%m-%d'`). El prompt del automation se actualizó con estos mismos dos cambios.
