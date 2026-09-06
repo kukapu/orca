@@ -6,6 +6,7 @@ import { observeExistingAutomationSession } from '@/lib/automation-session-obser
 import { findReusableAutomationSession } from '@/lib/automation-session-reuse'
 import type { AutomationTerminalOwnership } from '@/lib/automation-terminal-ownership'
 import { useAppStore } from '@/store'
+import { toAutomationLaunchPreferences } from '../../../shared/automation-launch-preferences'
 import type {
   AutomationDispatchRequest,
   AutomationDispatchResult
@@ -164,10 +165,12 @@ export async function handleAutomationDispatchRequest({
         }
       }
     }
+    const sessionOptions = toAutomationLaunchPreferences(automation)
     const result = await launchAgentBackgroundSession({
       agent: automation.agentId,
       worktreeId: worktree.id,
       prompt: automation.prompt,
+      ...(sessionOptions ? { sessionOptions } : {}),
       launchSource: 'unknown',
       title: run.title,
       onData: completion.appendOutput,

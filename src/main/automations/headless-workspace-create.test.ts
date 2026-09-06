@@ -103,4 +103,18 @@ describe('headless automation workspace create args', () => {
 
     expect(args.setupDecision).toBe('skip')
   })
+
+  it('forwards a pinned launch model onto the startup agent', () => {
+    const args = buildHeadlessAutomationWorktreeCreateArgs({
+      automation: { ...automation, model: 'gpt-5.5' },
+      run: {
+        id: 'run-1',
+        title: 'Nightly review run',
+        scheduledFor: Date.UTC(2026, 0, 2, 3, 4, 5)
+      },
+      repo
+    })
+
+    expect(args.startupLaunchPreferences).toEqual({ model: 'gpt-5.5' })
+  })
 })

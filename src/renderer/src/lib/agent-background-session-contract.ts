@@ -1,13 +1,24 @@
+import type { AgentLaunchPreferences } from '../../../shared/agent-session-host-authority'
+import { toAutomationSessionOptions } from '../../../shared/automation-launch-preferences'
 import type { ParsedAgentStatusPayload } from '../../../shared/agent-status-types'
 import type { LaunchSource } from '../../../shared/telemetry-events'
 import type { TuiAgent } from '../../../shared/tui-agent'
 import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
 import type { AutomationTerminalOwnership } from '@/lib/automation-terminal-ownership'
 
+export function backgroundSessionOptionPlan(preferences: AgentLaunchPreferences | undefined): {
+  sessionOptions?: Record<string, string>
+  sessionOptionsOverrideAgentArgs?: boolean
+} {
+  const sessionOptions = toAutomationSessionOptions(preferences)
+  return sessionOptions ? { sessionOptions, sessionOptionsOverrideAgentArgs: true } : {}
+}
+
 export type LaunchAgentBackgroundSessionArgs = {
   agent: TuiAgent
   worktreeId: string
   prompt?: string
+  sessionOptions?: AgentLaunchPreferences
   launchSource?: LaunchSource
   title?: string
   onData?: (chunk: string) => void

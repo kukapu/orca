@@ -5,6 +5,7 @@ import type {
   AutomationUpdateInput
 } from '../../../../shared/automations-types'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
+import { normalizeAutomationLaunchField } from '../../../../shared/automation-launch-preferences'
 import { buildAutomationRrule } from '../../../../shared/automation-schedule-occurrences'
 import { ensureHooksConfirmed } from '@/lib/ensure-hooks-confirmed'
 import { translate } from '@/i18n/i18n'
@@ -159,6 +160,7 @@ export async function saveOrcaAutomation(
     prompt: draft.prompt,
     precheck,
     agentId: draft.agentId,
+    model: normalizeAutomationLaunchField(draft.model),
     runContext,
     projectId: draft.projectId,
     workspaceMode: draft.workspaceMode,
@@ -178,6 +180,7 @@ export async function saveOrcaAutomation(
     prompt: draft.prompt,
     precheck,
     agentId: draft.agentId,
+    model: normalizeAutomationLaunchField(draft.model),
     runContext,
     projectId: draft.projectId,
     workspaceMode: draft.workspaceMode,

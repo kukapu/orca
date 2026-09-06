@@ -7,6 +7,7 @@ import type {
 } from '../../../shared/automations-types'
 import type { PersistedState } from '../../../shared/persisted-state-types'
 import { normalizeAutomationPrecheck } from '../../../shared/automation-precheck'
+import { normalizeAutomationLaunchField } from '../../../shared/automation-launch-preferences'
 import { nextAutomationOccurrenceAfter } from '../../../shared/automation-schedule-occurrences'
 import {
   applyAutomationExecutionTarget,
@@ -79,6 +80,8 @@ export function createAutomation(
   }
   const schedulerOwner = getAutomationSchedulerOwner(repo)
   const contexts = getAutomationContextsForRepo(repo, operations.state.projectHostSetups ?? [])
+  const model = normalizeAutomationLaunchField(input.model)
+  const effort = normalizeAutomationLaunchField(input.effort)
   const automation: Automation = {
     id: randomUUID(),
     ...(input.creationKey ? { creationKey: input.creationKey } : {}),
@@ -86,6 +89,8 @@ export function createAutomation(
     prompt: input.prompt,
     precheck: normalizeAutomationPrecheck(input.precheck),
     agentId: input.agentId,
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
     // Why own contexts win: a wire context speaks the client's perspective —
     // 'runtime:<id>' is a client-assigned name this store cannot interpret, and
     // persisting it makes the projection orphan a record this authority owns.
@@ -166,6 +171,12 @@ export function updateAutomation(
     precheck: Object.hasOwn(definedUpdates, 'precheck')
       ? normalizeAutomationPrecheck(definedUpdates.precheck)
       : normalizeAutomationPrecheck(current.precheck),
+    model: Object.hasOwn(definedUpdates, 'model')
+      ? normalizeAutomationLaunchField(definedUpdates.model)
+      : current.model,
+    effort: Object.hasOwn(definedUpdates, 'effort')
+      ? normalizeAutomationLaunchField(definedUpdates.effort)
+      : current.effort,
     projectId: repoId,
     // Why the wire object is ignored: contexts are the storing authority's own
     // registry speaking. A move restates them from that registry, anything else

@@ -1,8 +1,9 @@
 import { useAppStore } from '@/store'
 import { buildAgentStartupPlan } from '@/lib/tui-agent-startup'
-import type {
-  LaunchAgentBackgroundSessionArgs,
-  LaunchAgentBackgroundSessionResult
+import {
+  backgroundSessionOptionPlan,
+  type LaunchAgentBackgroundSessionArgs,
+  type LaunchAgentBackgroundSessionResult
 } from '@/lib/agent-background-session-contract'
 import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { scheduleAgentBackgroundDraft } from '@/lib/agent-background-draft-delivery'
@@ -94,6 +95,7 @@ export async function launchAgentBackgroundSession(
     cmdOverrides,
     agentArgs,
     agentEnv,
+    ...backgroundSessionOptionPlan(args.sessionOptions),
     platform: launchPlatform,
     shell: startupShell,
     isRemote,

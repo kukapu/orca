@@ -86,6 +86,30 @@ describe('Store', () => {
     expect(persisted.automations[0].baseBranch).toBeNull()
   })
 
+  it('persists and clears a pinned launch model', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+    const automation = store.createAutomation({
+      name: 'Nightly',
+      prompt: 'Run checks',
+      agentId: 'opencode',
+      model: 'zai-coding-plan/glm-5.3',
+      projectId: 'r1',
+      workspaceMode: 'new_per_run',
+      timezone: 'UTC',
+      rrule: 'FREQ=DAILY;BYHOUR=9;BYMINUTE=0',
+      dtstart: new Date('2026-05-13T00:00:00Z').getTime()
+    })
+
+    expect(automation.model).toBe('zai-coding-plan/glm-5.3')
+
+    const updated = store.updateAutomation(automation.id, { model: null })
+    expect(updated.model).toBeNull()
+    store.flush()
+    const persisted = readDataFile() as { automations: { model: string | null }[] }
+    expect(persisted.automations[0].model).toBeNull()
+  })
+
   it('returns the existing automation for a repeated creation key', async () => {
     const store = await createStore()
     store.addRepo(makeRepo())

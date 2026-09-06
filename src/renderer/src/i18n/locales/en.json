@@ -15617,7 +15617,12 @@
           "51a470b966": "ssh",
           "b09b2384fd": "Paused",
           "eaa02014f8": "Enabled",
-          "29baf8f4c2": "Source"
+          "29baf8f4c2": "Source",
+          "model": "Model"
+        },
+        "AutomationModelField": {
+          "model": "Model",
+          "placeholder": "Agent default"
         },
         "AutomationEditorDialog": {
           "fb1896a5e7": "Cancel",

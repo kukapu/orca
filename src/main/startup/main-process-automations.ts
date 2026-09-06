@@ -1,3 +1,4 @@
+import { toAutomationLaunchPreferences } from '../../shared/automation-launch-preferences'
 import { AutomationService } from '../automations/service'
 import { createHeadlessAutomationOutputSnapshotBuffer } from '../automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from '../automations/headless-workspace-create'
@@ -48,10 +49,12 @@ export function initializeMainProcessAutomations(): AutomationService {
             if (!automation.workspaceId) {
               throw new Error('The target workspace is no longer available.')
             }
+            const launchPreferences = toAutomationLaunchPreferences(automation)
             const terminal = await runtime.launchAgentTerminal(`id:${automation.workspaceId}`, {
               agent: automation.agentId,
               prompt: automation.prompt,
-              title: run.title
+              title: run.title,
+              ...(launchPreferences ? { launchPreferences } : {})
             })
             terminalHandle = terminal.handle
             terminalSessionId = terminal.tabId ?? null

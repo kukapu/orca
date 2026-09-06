@@ -79,6 +79,13 @@ describe('formatAutomationShow reports the host the authority projects', () => {
     expect(output).not.toContain('host:')
     expect(output).toContain('target: ssh:box-1')
   })
+
+  it('shows a pinned model and falls back to agent default', () => {
+    expect(formatAutomationShow({ automation: automation({ model: 'gpt-5.5' }) })).toContain(
+      'model: gpt-5.5'
+    )
+    expect(formatAutomationShow({ automation: automation() })).toContain('model: agent default')
+  })
 })
 
 describe('formatAutomationList reports each row host', () => {

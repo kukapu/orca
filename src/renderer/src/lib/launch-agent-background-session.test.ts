@@ -173,6 +173,21 @@ describe('launchAgentBackgroundSession', () => {
     expect(result).toMatchObject({ tabId, paneKey, ptyId: 'pty-1' })
   })
 
+  it('overrides the agent CLI last-used model when session options pin one', async () => {
+    const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
+    mockSpawn.mockResolvedValue({ id: 'pty-1', incarnationId: 'inc-fresh' })
+
+    await launchAgentBackgroundSession({
+      agent: 'claude',
+      worktreeId: 'wt-1',
+      prompt: 'run the automation',
+      sessionOptions: { model: 'opus' }
+    })
+
+    expect(mockSpawn.mock.calls[0]?.[0].command).toContain('--model')
+    expect(mockSpawn.mock.calls[0]?.[0].command).toContain('opus')
+  })
+
   it('does not create or mount the tab while the explicit PTY spawn is unresolved', async () => {
     let resolveSpawn!: (result: { id: string }) => void
     mockSpawn.mockReturnValueOnce(
