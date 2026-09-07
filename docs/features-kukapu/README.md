@@ -7,12 +7,13 @@ de `kukapu/orca`, en paralelo al desarrollo oficial de Orca.
 
 | Iniciativa                                                   | Estado                                                               | Release objetivo                 |
 | ------------------------------------------------------------ | -------------------------------------------------------------------- | -------------------------------- |
-| [Orquestacion OpenCode y Pi](./opencode-pi-orchestration.md) | Candidato post-upstream verificado; instalacion externa pendiente | `1.4.197-kukapu.2` |
+| [Orquestacion OpenCode y Pi](./opencode-pi-orchestration.md) | Instalada externamente; runtime .2 y artefacto comprobados | `1.4.197-kukapu.2` |
 
 Entrega vigente: [candidato fechado 2026-09-07](./release-delivery-197-2-20260907.md),
 [smoke del artefacto](./artifact-smoke-197-2-20260907.md) y
 [checkpoint del Run](./continuar-upstream-197-2.md). No confundir el paquete
-fechado con el del dia 6 ni la entrega con una instalacion en produccion.
+fechado con el del dia 6. Instalacion externa confirmada el 2026-09-07;
+[flujo del fork y automatizacion con Astra](../reference/upstream-sync-automation.md).
 
 ## Convenciones
 

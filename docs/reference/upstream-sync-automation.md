@@ -27,7 +27,7 @@ una lista staged incorrecta; el indice real se comprueba con Git.
 
 - Nombre: `orca-upstream-sync`; id `3eb73380-5393-4ded-bc72-340a137008f6`.
 - Host: servidor Orca que posee `/home/kukapu/dev/projects/orca`; no el cliente.
-- Agente: OpenCode. Modelo solicitado: **`openai/gpt-6-astra`**, no `-fast` ni
+- Agente: OpenCode. Modelo fijado y leido: **`openai/gpt-6-astra`**, no `-fast` ni
   un modelo homonimo de otro proveedor. Sin override de effort.
 - Worktree nuevo por ejecucion desde `origin/main-kukapu`, sin reutilizar sesion.
   Actualizar esta definicion; no duplicarla ni alterar la automatizacion de Postiz.
@@ -133,11 +133,17 @@ en SSH o Windows se debe usar el ejecutor y shell del host propietario.
 
 ## Aplicacion Y Limites
 
-El runtime `.1` no guarda el campo model: una respuesta ok no demuestra que se
-haya aplicado. `.2` incorpora el soporte por automatizacion (`63a3944846`). Tras
-la instalacion EXTERNA del usuario, editar la definicion existente y leerla de
-nuevo; exigir `agentId=opencode`, `model=openai/gpt-6-astra`, base remota y prompt
-identico al bloque canonico. No activar otra automatizacion como workaround.
+El runtime `.1` no guardaba el campo model: una respuesta ok no demuestra que se
+haya aplicado. `.2` incorpora el soporte por automatizacion (`63a3944846`). El
+2026-09-07, tras la instalacion EXTERNA del usuario, se fijo y verifico por lectura
+`agentId=opencode`, `model=openai/gpt-6-astra`, effort null, base remota y prompt
+identico al bloque canonico. Automatizacion habilitada; horario y owner conservados.
+No se cambio la configuracion global de OpenCode ni la automatizacion de Postiz.
+
+El precheck se verifico sin red con siete casos simulados: novedad oficial,
+upstream ya integrado, errores de ancestros, commits locales no publicados y
+errores de ambos fetch. Solo la novedad oficial con referencias validas permite
+continuar. El configurador verifico mediante aserciones la lectura posterior.
 
 No se lanza una sincronizacion ni una llamada LLM para comprobar una edicion de
 configuracion. La primera corrida programada debe aportar evidencia del modelo
