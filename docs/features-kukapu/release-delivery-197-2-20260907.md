@@ -4,8 +4,15 @@ Pack nuevo en `dist/release-1.4.197-kukapu.2-20260907/` (no toca
 `dist/release-1.4.197-kukapu.2/` ni `backup.patch`). Informe de ayer
 (`release-delivery-197-2.md`) preservado.
 
-**Estado final 10:44 UTC:** candidato verificado para entrega local. Instalacion
-pendiente del usuario desde terminal externa; no instalado ni publicado.
+**Estado actual, 2026-09-07:** instalado EXTERNAMENTE por el usuario. Coordinador
+verifico `orca --version` y `/opt/orca/VERSION` `.2`, ambos servicios activos y
+runtime `b0c74bff-13d3-4ca5-906b-bc361f02372b` `ready`. SHA-256 del AppImage en
+`/opt/orca/` identico al de la tabla. No repetir apply por este documento.
+
+La entrega de las 10:44 UTC era previa a instalacion; sus gates y comandos se
+conservan abajo como evidencia y referencia. Codigo/docs ya publicados en el fork.
+No se auditaron aqui los backups ni todas las migraciones de estado del instalador
+externo; las comprobaciones postinstalacion anteriores son el alcance verificado.
 
 ## Provenance
 
@@ -155,5 +162,6 @@ despues del swap, el instalador no promete rollback automatico del servicio.
   build, pack, typecheck ni la bateria de 8533 tests al retomar: se conservaron
   las evidencias del checkpoint y se verifico el artefacto resultante.
 - Matriz adversarial Docker/FUSE/userns omitida: requiere pull/apt/red sin permiso.
-- Instalacion, backup de estado y verificacion posterior en produccion pendientes
-  del usuario. No se ejecutaron apply, sudo, restart de produccion ni push.
+- Instalacion ejecutada externamente por el usuario y comprobada en el estado
+  actual de la cabecera. El coordinador no ejecuto apply, sudo ni restart de
+  produccion. Push del codigo y documentos autorizado posteriormente y realizado.

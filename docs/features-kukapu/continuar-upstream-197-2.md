@@ -4,7 +4,34 @@ Checkpoint de continuidad solicitado por el usuario antes de limpiar el contexto
 Capturado inicialmente el 2026-09-07 a las 10:16 UTC. La reconciliacion siguiente
 prima sobre esa captura y los informes historicos; comprueba el estado real al volver.
 
-## Cambio De Flujo Del Fork (En Curso, 2026-09-07)
+## Cierre Postinstalacion (2026-09-07)
+
+- El usuario termino la instalacion EXTERNA. Verificado: `orca --version` .2,
+  `/opt/orca/VERSION` .2, runtime `b0c74bff-13d3-4ca5-906b-bc361f02372b`
+  `ready`, distinto del runtime .1 anterior. Ambos servicios active.
+- SHA-256 de `/opt/orca/orca-linux.AppImage` identico al candidato fechado:
+  `4c399be795bc6703837b2c6b316c8bbbce97806747a3333c0bfa04f2416a8483`.
+  No se repitio build/pack ni se ejecuto instalacion/restart desde el coordinador.
+- Tras el reinicio, run-current devolvia null. Recuperado el MISMO Run
+  `run_3bc1b0c65acb` mediante run-use, sin recrearlo: generacion 2,
+  coordinador `term_29e3c00e-02d7-4993-a341-877f65e35942`. No relanzar workers
+  por los handles historicos anteriores al reinicio.
+- Automatizacion existente `3eb73380-5393-4ded-bc72-340a137008f6`:
+  `model=openai/gpt-6-astra` FIJADO y comprobado por lecturas posteriores;
+  OpenCode, effort null, enabled true, base `origin/main-kukapu`, new_per_run,
+  fresh session. Prompt/precheck identicos al documento canonico con aserciones.
+- Horario/nextRunAt/owner/proyecto conservados. Proxima ocurrencia:
+  2026-09-08 05:00 UTC / 07:00 Madrid. Postiz sin cambios. No se ejecuto runNow,
+  no hubo llamada LLM ni se creo automatizacion o worker duplicado.
+- Flujo y prompt publicados previamente en `cb1c108caa`; este cierre documental
+  no cambia las fuentes del AppImage (`42ab555177`). Base de Orca conservada
+  tras reiniciar: `origin/main-kukapu`.
+- Asignacion completada; no volver a aplicar instalacion o modelo como tareas
+  pendientes. La primera corrida programada debe aportar evidencia del modelo
+  efectivo. Quedan fuera de este cierre el ajuste DST y la discrepancia staged
+  de la UI; cambiar base o reiniciar no demuestra que esta ultima este resuelta.
+
+## Historial Del Cambio De Flujo (2026-09-07)
 
 El usuario autorizo el push posterior a la entrega: `19d1c8836c` ya esta en
 `origin/main-kukapu`, comprobado con ls-remote y arbol limpio. Despues decidio:

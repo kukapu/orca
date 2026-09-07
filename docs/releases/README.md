@@ -8,8 +8,8 @@ Una entrada `.md` por versión que construimos e instalamos desde `main-kukapu` 
 | [v1.4.194-kukapu.2](./v1.4.194-kukapu.2.md) | 2026-09-01  | Sustituida por v1.4.196-kukapu.1                         | upstream/main (post v1.4.194)               |
 | [v1.4.195-kukapu.1](./v1.4.195-kukapu.1.md) | 2026-09-02  | Compilada pero nunca instalada                           | upstream/main (sync run 1)                  |
 | [v1.4.196-kukapu.1](./v1.4.196-kukapu.1.md) | 2026-09-03  | Sustituida por v1.4.197-kukapu.1                         | upstream/main (sync run 2)                  |
-| [v1.4.197-kukapu.1](./v1.4.197-kukapu.1.md) | 2026-09-04  | Instalada en `olares-one`                                | upstream/main (sync run 3)                  |
-| [v1.4.197-kukapu.2](./v1.4.197-kukapu.2.md) | 2026-09-07  | Candidato post-upstream verificado; instalacion externa pendiente | `42ab555177` (upstream `314506003a`) |
+| [v1.4.197-kukapu.1](./v1.4.197-kukapu.1.md) | 2026-09-04  | Sustituida por v1.4.197-kukapu.2                         | upstream/main (sync run 3)                  |
+| [v1.4.197-kukapu.2](./v1.4.197-kukapu.2.md) | 2026-09-07  | Instalada externamente; hash, runtime y servicios verificados | `42ab555177` (upstream `314506003a`) |
 
 Convenciones:
 
