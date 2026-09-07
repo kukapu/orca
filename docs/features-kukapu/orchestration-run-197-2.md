@@ -8,8 +8,9 @@ reconstruir .2; no push ni instalacion desde Orca. Checkpoint creado
 upstream/main `314506003a`. Estado, responsables y limites actuales en
 [upstream-integration-197-2-20260907.md](./upstream-integration-197-2-20260907.md).
 Los apartados siguientes conservan la ejecucion previa y NO autorizan sus
-antiguos gates. Ultima orden 2026-09-07 08:13 UTC: usar xai/grok-4.6 por poca
-cuota GLM; ambos workers cambiados in-place y verificados.
+antiguos gates. Ultima orden: usar opencode-go/muse-spark-1.3-contributor para
+preparacion y diagnostico de tests donde el proveedor no es objeto de prueba;
+ambos workers reanudados cambiados in-place y verificados.
 
 ## Estado operativo vigente (2026-09-06, reanudado tras compactacion)
 

@@ -7,9 +7,41 @@ resolver conflictos y reconstruir el candidato 1.4.197-kukapu.2. No se autoriza
 push ni instalacion/reinicio de produccion. La instalacion la ejecutara el
 usuario desde una terminal fuera de Orca, con instrucciones y rollback.
 La mejora de compactacion de OpenCode queda como pendiente independiente.
-ULTIMA ORDEN (2026-09-07 08:13 UTC): queda poca cuota GLM5.3; usar
-`xai/grok-4.6` a partir de ahora. Ambos selectores cambiados in-place y footer
-Grok4.6 xAI high verificado, sin recrear terminales ni reiniciar el merge.
+ULTIMA ORDEN: para los pasos de preparacion/diagnostico de tests donde el
+proveedor no es el objeto de la prueba, usar el modelo elegido por coste
+`opencode-go/muse-spark-1.3-contributor`. Ambos workers reanudados cambiados
+in-place y footer Muse Spark 1.3 Contributor OpenCode Go verificado. Los E2E
+simulados no hacen llamadas LLM; el modelo corresponde al worker que los opera.
+Cualquier prueba de un proveedor real conserva su modelo especifico y requiere
+un gate separado. Esta orden sustituye Grok para el trabajo rutinario restante.
+
+## Estado Actual Tras Reanudacion
+
+- Recheck posterior a los ajustes de fixtures: simulado1/1 y web4/4 PASSED.
+  `ask --json` devolvia envelope `{ok,result}` y el fake leia campos en el tope:
+  no era una cancelacion real. El web build carecia de `VITE_EXPOSE_STORE=true`:
+  el poll nulo no demostraba un fallo de idioma del producto. Bundle web actual
+  es E2E y NO se debe empaquetar; reconstruccion production pendiente.
+  Informe /tmp/opencode/post-upstream-e2e-recheck-sep7.md.
+- Integracion registrada: checkpoint3c91f86317, mergeautomatizaciondfc86dbbc3,
+  mergeupstream5d0550794f y scriptinstalacion99f43d2e4b. Upstream314506003a y
+  checkpoint son ancestros comprobados. Sin push ni instalacion.
+- Tipos limpios y8533tests/20skip verdes. node-pty fue reconstruido por el hook
+  desde cache sin descargas; nuevo binario verificado bajo Electron y contra
+  el floor glibc2.31. Installer14tests en senuelos, nunca apply real.
+- Build E2E/CLI/web fresco09:31 paso, pero simulado fallo ASK_CANCELLED y web
+  no observo uiLanguage; no nuevo paquete aprobado hasta resolver esas pruebas.
+- Ambos procesos OpenCode originales salieron. El usuario indica que pudo
+  cerrarlos y AUTORIZA reanudar las mismas conversaciones, no perder contexto.
+- QA reanudado con ses_f897bd2d6ffebi2SOYmRbxkSvj en
+  term_2ddc11ff-9b88-472c-bc4d-35d3aaa3c5cf; Task task_ece7dd44b4fb /
+  Dispatch ctx_1f84945c6023 investiga parser/contrato ask simulado.
+- Core reanudado con ses_f8952e9faffeSZG4jI3Ai2kw2h en
+  term_52b043f2-bd30-4592-a555-40c9881cf1ef; Task task_dd9121ddbd05 /
+  Dispatch ctx_df27f2dc0be8 investiga idioma web. Ambos Grok4.6 xAI verificados,
+  en background sin focus. Viejos handles exited, no volver a despacharles.
+- Scopes separados, sin apps/LLM mientras diagnostican. Solo fixtures si se
+  demuestra cambio de contrato; cualquier fix de producto requiere gate.
 
 ## Estado inicial
 

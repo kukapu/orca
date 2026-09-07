@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../../src/shared/pairing'
 import {
   FAKE_AGENT_ASK_ARGS_SOURCE,
+  FAKE_AGENT_ASK_OUTCOME_SOURCE,
   FAKE_AGENT_ASK_MARKER_PREFIX,
   FAKE_HOOK_OBSERVED_MODEL,
   FAKE_HOOK_OBSERVED_THINKING,
@@ -305,6 +306,7 @@ describe('fake OpenCode/Pi orchestration agents', () => {
     const source = readFileSync(shared, 'utf8')
     expect(source).toContain(FAKE_AGENT_ASK_MARKER_PREFIX)
     expect(source).toContain('ASK_ANSWER_RECEIVED')
+    expect(source).toContain('classifyFakeAgentAskStdout')
     expect(source).toContain('buildFakeAgentAskArgs')
     expect(source).toContain('postHookEvent')
     expect(source).toContain('X-Orca-Agent-Hook-Token')
@@ -360,6 +362,55 @@ describe('fake OpenCode/Pi orchestration agents', () => {
     expect(() => buildAskArgs({ question: 'Q', timeoutMs: 1, to: 't' }, {}, null)).toThrow(
       /ORCA_TERMINAL_HANDLE/
     )
+  })
+
+  it('classifies ask --json envelopes without treating answered replies as cancelled', () => {
+    const classify = new Function(
+      'stdout',
+      `${FAKE_AGENT_ASK_OUTCOME_SOURCE}; return classifyFakeAgentAskStdout(stdout)`
+    ) as (stdout: string) => string
+    expect(
+      classify(
+        JSON.stringify(
+          {
+            ok: true,
+            result: {
+              answer: 'yes',
+              messageId: 'msg_1',
+              threadId: 'thread_1',
+              timedOut: false
+            }
+          },
+          null,
+          2
+        )
+      )
+    ).toBe('ASK_ANSWER_RECEIVED:yes')
+    expect(classify(JSON.stringify({ answer: 'yes', messageId: 'msg_1', timedOut: false }))).toBe(
+      'ASK_ANSWER_RECEIVED:yes'
+    )
+    expect(
+      classify(
+        JSON.stringify({
+          ok: true,
+          result: { answer: null, messageId: 'msg_q', threadId: 'msg_q', timedOut: true }
+        })
+      )
+    ).toBe('ASK_TIMED_OUT:msg_q')
+    expect(
+      classify(
+        JSON.stringify({
+          ok: true,
+          result: {
+            answer: null,
+            messageId: 'msg_q',
+            threadId: 'msg_q',
+            timedOut: false,
+            cancelled: true
+          }
+        })
+      )
+    ).toBe('ASK_CANCELLED:msg_q')
   })
 
   it('builds hook events that mirror the real provider plugins', () => {
