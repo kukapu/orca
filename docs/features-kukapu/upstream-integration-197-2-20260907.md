@@ -1,5 +1,9 @@
 # Integracion upstream para el candidato 197.2
 
+Checkpoint para retomar tras limpiar contexto:
+[continuar-upstream-197-2.md](./continuar-upstream-197-2.md).
+Consultar primero ese estado y reconciliarlo con el Run antes de repetir acciones.
+
 ## Autorizacion
 
 El usuario aprueba un commit LOCAL de proteccion antes de integrar upstream,
@@ -15,7 +19,20 @@ simulados no hacen llamadas LLM; el modelo corresponde al worker que los opera.
 Cualquier prueba de un proveedor real conserva su modelo especifico y requiere
 un gate separado. Esta orden sustituye Grok para el trabajo rutinario restante.
 
-## Estado Actual Tras Reanudacion
+## Estado Reconciliado 2026-09-07
+
+- Candidato production compilado y empaquetado por Core sobre `42ab555177`;
+  pack `ctx_ab0df039ab27` termino a las 10:19:47Z durante la pausa.
+  Se conserva en `dist/release-1.4.197-kukapu.2-20260907/`, no en el directorio
+  de ayer. Al retomar no se repitio ninguna compilacion ni empaquetado.
+- Informe vigente: [entrega fechada](./release-delivery-197-2-20260907.md).
+  Hashes, metadatos y ASAR contrastados; preflight del instalador exit 0 sin
+  mutaciones. [Smoke del artefacto](./artifact-smoke-197-2-20260907.md) aceptado
+  tras revision del coordinador; entrega externa preparada, no instalacion ni push.
+- Tasks y handles actuales estan en el checkpoint enlazado arriba. Los estados
+  de diagnostico que siguen son historicos y no autorizan relanzar esos workers.
+
+## Historial De Reanudacion Y E2E
 
 - Recheck posterior a los ajustes de fixtures: simulado1/1 y web4/4 PASSED.
   `ask --json` devolvia envelope `{ok,result}` y el fake leia campos en el tope:
@@ -53,7 +70,7 @@ un gate separado. Esta orden sustituye Grok para el trabajo rutinario restante.
 - Referencias remotas aun pendientes de actualizar mediante fetch; estos
   valores describen las referencias locales inspeccionadas, no un sondeo remoto.
 
-## Checkpoint Y Objetivos Fijados
+## Historial De Checkpoint Y Objetivos
 
 - Primer merge REGISTRADO: `dfc86dbbc3787d43c447e7c5f90939c27a1afa03`, padres
   checkpoint3c91f86317 y automatizacion8693b5a28e. Verificacion4080tests/10skip,
