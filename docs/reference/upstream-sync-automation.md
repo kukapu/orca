@@ -1,47 +1,148 @@
-# Automatización diaria de sincronización upstream (`orca-upstream-sync`)
+# Flujo Del Fork Y Sincronizacion Diaria
 
-Prompt que recibe el agente lanzado por la automatización `orca-upstream-sync` (todos los días a las 07:00). Pegar en la definición del automation. Este fichero es la versión canónica; actualiza el automation y este doc a la vez.
+Decision del usuario, 2026-09-07. Esta pagina es la fuente canonica del flujo y
+del prompt de `orca-upstream-sync`; mantener documento y automatizacion alineados.
+
+## Ramas Y Referencias
+
+| Referencia | Funcion |
+| --- | --- |
+| `main-kukapu` | Rama principal de nuestro fork y fuente de versiones propias validadas. |
+| `origin/main-kukapu` | Copia publicada en `kukapu/orca`, tracking y comparacion habitual en Orca. |
+| `upstream/main` | Punta del repositorio oficial `stablyai/orca`; solo fuente de actualizaciones. |
+| `main` / `origin/main` | Referencias opcionales al oficial; no destino de nuestro trabajo ni paso obligatorio. |
+
+La rama predeterminada del fork en GitHub es `main-kukapu`. No borrar ni mover
+`main`, no pushear a upstream y no crear PRs automaticamente. Una contribucion
+al oficial, si se pide, se prepara aparte desde `upstream/main` con cambios acotados.
+No hace falta pasar por `main` local para incorporar upstream, ni seguir tags de
+release en lugar de su punta.
+
+En el checkout principal, Git sigue `origin/main-kukapu` y la base de Orca es
+`origin/main-kukapu`. Eso distingue sincronizacion pendiente de las diferencias
+historicas frente al oficial. Cambiar la base NO demuestra que se haya corregido
+una lista staged incorrecta; el indice real se comprueba con Git.
+
+## Automatizacion Existente
+
+- Nombre: `orca-upstream-sync`; id `3eb73380-5393-4ded-bc72-340a137008f6`.
+- Host: servidor Orca que posee `/home/kukapu/dev/projects/orca`; no el cliente.
+- Agente: OpenCode. Modelo solicitado: **`openai/gpt-6-astra`**, no `-fast` ni
+  un modelo homonimo de otro proveedor. Sin override de effort.
+- Worktree nuevo por ejecucion desde `origin/main-kukapu`, sin reutilizar sesion.
+  Actualizar esta definicion; no duplicarla ni alterar la automatizacion de Postiz.
+- Conservar la programacion existente. Siguiente ocurrencia comprobada:
+  2026-09-08 05:00 UTC = 07:00 Europe/Madrid.
+- Limite del horario actual: el planificador calcula en la zona del proceso
+  (UTC en este host), aunque guarda `timezone=Europe/Madrid`. La regla actual
+  `FREQ=DAILY;BYHOUR=5;BYMINUTE=0` no garantiza las 07:00 tras el cambio de hora.
+  Revisar el ajuste DST por separado; no cambiar la zona global del servicio.
 
 ## Prompt
 
 ```text
-Eres el agente de sincronización diaria del fork kukapu/orca (origin) del proyecto oficial stablyai/orca (upstream). Mantengo este fork porque tiene cambios propios que upstream aún no ha aprobado; hasta que eso pase, lanzo mis propias versiones basadas en upstream, así que el fork debe estar al día casi a diario. Estás en un worktree nuevo creado desde main-kukapu. El checkout principal está en /home/kukapu/dev/projects/orca.
+Eres el agente de sincronizacion diaria de kukapu/orca (origin) con el oficial
+stablyai/orca (upstream). Lee AGENTS.md, docs/uso/README.md y
+docs/reference/upstream-sync-automation.md. Trabaja solo en tu worktree asignado.
 
-ESTRATEGIA DE BASE (decisión 2026-09-03, no cambiar sin orden explícita): main-kukapu sigue SIEMPRE la punta de `upstream/main`, cada día, más los commits propios del fork encima. NO seguir los tags de release `v*` (p. ej. v1.4.196): se cortan desde un `main` anterior más unos pocos picks, así que su código es más viejo que la punta de `main`. Sincronizar NO es desplegar: la imagen del server (`<era>.kukapu.<n>`, p. ej. 196.kukapu.1) se genera a mano desde un commit de main-kukapu ya probado, nunca automáticamente en este run.
+La rama principal de nuestro fork es main-kukapu. Tu worktree parte de
+origin/main-kukapu, la copia publicada. upstream/main solo aporta actualizaciones.
+No uses origin/main como base cotidiana, no actualices main como intermediaria,
+no hagas PRs ni pushes a upstream. Sincronizar no es compilar una release,
+empaquetar, instalar ni reiniciar produccion.
 
-POLÍTICA DE CONFLICTOS (importante): si upstream implementa (de forma distinta) algo que el fork también implementa, GANA SIEMPRE LA IMPLEMENTACIÓN DE UPSTREAM, aunque signifique abandonar la versión del fork. Upstream es lo que seguirá manteniéndose; la copia del fork queda obsoleta. Los cambios del fork que NO choquen con upstream se conservan intactos.
+El modelo de esta automatizacion debe estar fijado a openai/gpt-6-astra en su
+definicion de lanzamiento, no solo mencionado en el prompt. Comprueba el modelo
+configurado y la evidencia efectiva disponible; si no coincide, detente y reporta.
+No cambies configuracion global, copies credenciales o elijas otro proveedor.
 
-1) Rescate de trabajo pendiente (hazlo ANTES de traer upstream): en /home/kukapu/dev/projects/orca ejecuta `git status`. Si hay cambios sin commitear (incluidos untracked), es trabajo mío aún no portado: pásalo a main-kukapu así:
-   a. En ese checkout crea una rama temporal (p. ej. kukapu/wip-port-<fecha>), `git add -A` y haz un commit-snapshot fiel (puede usar --no-verify SOLO aquí).
-   b. Vuelve a main-kukapu y haz `git pull --ff-only origin main-kukapu` (el árbol ya está limpio tras el snapshot).
-   c. `git cherry-pick -n <rama-temporal>`, deshaz el staging y reconstruye commits lógicos por feature con mensajes convencionales (feat/fix/chore/style + (#issue) si aplica). Los ficheros de formato suelto van en su propio commit style/chore.
-   d. Si los hooks (lint-staged: oxlint, react-doctor, oxfmt) rechazan por max-lines u otra regla, NO desactives ninguna regla: refactoriza (extrae helpers a módulos nuevos o parte tests a su propio fichero) y reintenta.
-   e. Verifica con `pnpm install`, `pnpm tc` y `pnpm test` sobre los paths de las áreas tocadas; añade `pnpm run check:code-quality:changed`.
-   f. Si todo pasa: `git push origin main-kukapu`, borra la rama temporal y deja el checkout limpio. Si algo falla y no lo logras en 2-3 intentos: deja el snapshot en la rama temporal SIN pushear, no toques nada más y menciónalo en el resumen.
-   Si el checkout está limpio pero no está en main-kukapu, o está en medio de un rebase/merge: NO lo toques, repórtalo.
-   Si `pnpm install` reescribe pnpm-lock.yaml (p. ej. normaliza hashes de patches con pnpm 12), commitea esa normalización como `chore:` — hay precedente en la historia del fork.
+1. Reconciliar antes de actuar: identifica workspace, Run y ejecuciones anteriores
+de esta automatizacion. No dupliques un trabajo activo o de estado unverifiable.
+Revisa git status, rama, HEAD y remotos. Si tu worktree tiene cambios ajenos o una
+operacion Git pendiente, no los modifiques. Conserva las conversaciones existentes.
 
-2) Traer upstream: de vuelta en tu worktree de ejecución, `git fetch origin && git merge --ff-only origin/main-kukapu` para alinearte (por si el paso 1 pusheó algo), luego `git fetch upstream main && git merge upstream/main`. Si responde "Already up to date", termina reportando que el fork ya está al día (incluye el resultado del paso 1).
-   - Aunque el merge sea limpio, calcula el merge-base previo y lista los ficheros tocados por AMBOS lados: son candidatos a conflicto semántico; verifica esos puntos manualmente y ejecuta tests de esas áreas.
+2. Fetch acotado, desde tu worktree:
+git fetch --no-tags origin refs/heads/main-kukapu:refs/remotes/origin/main-kukapu
+git fetch --no-tags upstream refs/heads/main:refs/remotes/upstream/main
+Si falla cualquiera, para. Si existe la rama local main-kukapu con commits no
+incluidos en origin/main-kukapu, para y reporta: ese trabajo local tiene prioridad
+y necesita una reconciliacion supervisada. No lo sobrescribas ni lo publiques sin
+validarlo. Alinea solo TU rama de automatizacion mediante
+git merge --ff-only origin/main-kukapu. Si no es fast-forward, no fuerces nada.
 
-3) Conflictos: resuélvelos aceptando upstream por defecto; conserva el comportamiento del fork SOLO donde no exista equivalente upstream. Si descartas una feature/behavior del fork porque upstream lo implementa de otro modo, indícalo explícitamente en el mensaje del commit de merge y en el resumen final (si hay docs del fork sobre esa feature, docs/fixes, no las reescribas: menciónalo para revisión manual). Asegúrate de que imports/tipos quedan consistentes tras resolver.
+3. Guarda los OIDs de HEAD, origin/main-kukapu, upstream/main y su merge-base.
+Si upstream/main ya es ancestro de HEAD, informa sin merge ni pruebas repetidas.
+Error al comprobar ancestros no equivale a novedad upstream. Revisa un log acotado
+y los ficheros modificados por ambos lados desde la base, tambien si el merge
+textual fuera limpio. Integra upstream/main mediante un merge normal, sin rebase.
 
-4) Verificación: `pnpm install` y `pnpm tc` desde la raíz; si tocaste src/ en conflictos, además `pnpm test` con esos paths (incluye los tests del área solapada). Si falla, corrige con cambios mínimos y reintenta (máx 2-3 rondas). Los hooks de commit son autoritativos: nunca uses --no-verify salvo en el snapshot del paso 1a, y jamás desactives reglas de lint (max-lines incluido): refactoriza.
+4. Preserva el comportamiento propio y probado del fork al resolver conflictos.
+No apliques ours/theirs masivamente ni elimines features propias solo porque
+upstream toque el mismo fichero. Reutiliza una implementacion upstream equivalente
+solo si verificas que conserva los requisitos del fork; si no puedes demostrarlo,
+deja el caso bloqueado para el usuario. Documenta las decisiones y los solapamientos.
 
-5) Push: solo si TODO pasa: `git push origin HEAD:main-kukapu`. Nunca force push, nunca reescribas historia del remote. Si tras los reintentos razonables no compila/pasa tests: NO pushees nada; deja tu trabajo commiteado en la rama del worktree y ejecuta `orca worktree set --worktree active --comment` con un resumen del bloqueo.
+5. Verifica el resultado, no solo los conflictos textuales: typecheck pnpm tc,
+tests relevantes de cambios y areas solapadas con pnpm test, y
+pnpm run check:code-quality:changed. Revisa dependencias y scripts antes de instalar;
+si hace falta preparar dependencias, pnpm install --frozen-lockfile. No normalices
+el lockfile ni ejecutes instaladores globales como efecto accesorio. Respeta el
+floor glibc y los contratos SSH, Windows y folder workspaces de AGENTS.md.
+Tests y apps siempre ORCA_BACKGROUND_LAUNCH=1; usa aislamiento existente y Xvfb
+propio >=100 si procede, nunca el display :99 de produccion ni focus/show.
+No uses credenciales globales ni ejecutes smoke LLM, Docker pull, apt o sudo.
+Si un gate no se puede ejecutar con seguridad, reporta bloqueo, no un verde.
+Corrige fallos propios con cambios minimos, maximo 2-3 rondas razonadas. Nunca
+omitas hooks ni desactives reglas de lint. No repitas un build/pack ya terminado.
 
-6) Checkout principal: al final, en /home/kukapu/dev/projects/orca haz `git fetch origin` y, solo si está limpio y en main-kukapu, `git pull --ff-only origin main-kukapu` (origen explícito: el tracking local podría apuntar a upstream/main y el pull a ciegas fallaría). Verifica la paridad con `git rev-parse HEAD` vs `git rev-parse origin/main-kukapu`: deben coincidir; si no, repórtalo sin tocar nada más. Si se ensució durante la corrida o está en otra rama, no lo toques: repórtalo.
+6. Commit solo de tus cambios revisados, con hooks normales. Antes del push,
+vuelve a consultar origin/main-kukapu mediante fetch acotado y comprueba que su
+OID sigue siendo el validado, que main-kukapu local no tiene trabajo inedito y
+que tu arbol esta limpio. Si otro actor avanzo el remoto o la rama local, para:
+no publiques sobre una base nueva sin revalidar ni descartes cambios de nadie.
+Solo si todos los gates pasan: git push origin HEAD:main-kukapu, sin force.
+Comprueba el SHA remoto con git ls-remote y registra el resultado. No hay paso PR.
 
-7) Resumen final: WIP rescatado y commits generados; commits de upstream integrados; conflictos resueltos y política aplicada (sobre todo, qué comportamientos del fork cedieron ante upstream); fixes aplicados; resultado de verificación; push sí/no. Ejecuta `date '+%A, %Y-%m-%d'` y cierra el resumen con una línea "Día y fecha de ejecución: <resultado>".
+7. NO hagas checkout, pull, merge, stage, stash, snapshot, reset ni limpieza en
+el checkout principal ni en otros worktrees, aunque parezcan limpios. Pueden
+tener agentes, procesos o trabajo concurrente. Deja indicado el fast-forward
+pendiente para que el usuario/coordinador lo haga en una ventana segura.
+No elimines worktrees, ramas ni terminales. No instales ni reinicies servicios.
 
-Reglas transversales: sigue el AGENTS.md del repo; nunca elimines el worktree actual ni el checkout principal; mensajes de commit claros y convencionales; no hagas escaneos git sin acotar (--all sin filtro); si dudas entre conservar algo del fork o coger upstream, gana upstream y documéntalo.
+8. Si hay bloqueo, no pushees. Conserva el trabajo propio y su evidencia en tu
+rama; anota el motivo con orca worktree set --worktree active --comment.
+Resumen: OIDs antes/despues, commits oficiales incorporados, decisiones de
+conflicto, cambios propios preservados, gates y comandos/resultados exactos,
+limites, push si/no y checkout principal pendiente. Nunca publiques secretos,
+capabilities ni pairing. Ejecuta date '+%A, %Y-%m-%d' y cierra con
+"Dia y fecha de ejecucion: <resultado>".
 ```
 
-## Notas de operación
+## Precheck
 
-- Validado manualmente en la corrida del 2026-09-02: merge de 86 commits de upstream sin conflictos, rescate de WIP del checkout principal (fence de agentes #17943 + geometría de overlays) portado en 4 commits, gates de max-lines resueltos por refactor, verificación en verde y push a `origin/main-kukapu`.
-- El paso 1 existe porque el trabajo en curso suele vivir sin commitear en el checkout principal; el snapshot en rama temporal es la red de seguridad para no perder nada.
-- Cuando upstream absorba definitivamente los cambios del fork y el fork deje de tener cambios propios, esta automatización sobra: se puede retirar.
-- Corrida 2026-09-03: el paso 6 fallaba porque main-kukapu en el checkout principal trackeaba `upstream/main`; se fijó a `origin/main-kukapu` y el paso usa origen explícito desde entonces. Aclarado además que los tags `v*` (p. ej. v1.4.196) salen de una línea de release anterior a la punta de `upstream/main`: el fork sigue a `upstream/main`, no a los tags.
-- Estrategia vigente desde 2026-09-03: runs diarios en worktree contra la punta de `upstream/main` + commits propios encima; checkout base actualizado con check de paridad en cada run; imágenes `<era>.kukapu.<n>` generadas a mano desde commits probados (sincronizar ≠ desplegar).
-- 2026-09-05: eliminado el paso de limpieza de runs anteriores (antiguo paso 0): al cerrar la ventana del run, Orca elimina su worktree, así que la limpieza manual sobraba. El resumen final debe cerrarse con el día de la semana y la fecha de ejecución (`date '+%A, %Y-%m-%d'`). El prompt del automation se actualizó con estos mismos dos cambios.
+Solo consulta referencias; no integra commits, toca ficheros ni lanza el agente
+si no hay novedades. Un error Git debe impedir el lanzamiento, no convertirse
+en un resultado positivo por negar cualquier codigo de salida.
+
+```bash
+git -C /home/kukapu/dev/projects/orca fetch -q --no-tags origin refs/heads/main-kukapu:refs/remotes/origin/main-kukapu && git -C /home/kukapu/dev/projects/orca fetch -q --no-tags upstream refs/heads/main:refs/remotes/upstream/main && git -C /home/kukapu/dev/projects/orca merge-base --is-ancestor main-kukapu origin/main-kukapu && (git -C /home/kukapu/dev/projects/orca merge-base --is-ancestor upstream/main origin/main-kukapu; result=$?; test "$result" -eq 1)
+```
+
+Timeout: 60 segundos. La version del comando es especifica de este host Linux;
+en SSH o Windows se debe usar el ejecutor y shell del host propietario.
+
+## Aplicacion Y Limites
+
+El runtime `.1` no guarda el campo model: una respuesta ok no demuestra que se
+haya aplicado. `.2` incorpora el soporte por automatizacion (`63a3944846`). Tras
+la instalacion EXTERNA del usuario, editar la definicion existente y leerla de
+nuevo; exigir `agentId=opencode`, `model=openai/gpt-6-astra`, base remota y prompt
+identico al bloque canonico. No activar otra automatizacion como workaround.
+
+No se lanza una sincronizacion ni una llamada LLM para comprobar una edicion de
+configuracion. La primera corrida programada debe aportar evidencia del modelo
+efectivo y de sus gates. Catalogo disponible no equivale a cuota garantizada.
+
+Esta decision sustituye las instrucciones antiguas de rescatar WIP ajeno,
+omitir hooks, dar prioridad incondicional a upstream o actualizar automaticamente
+el checkout principal. Los resultados historicos no autorizan repetir esas acciones.

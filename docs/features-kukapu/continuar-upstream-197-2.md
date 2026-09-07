@@ -4,6 +4,67 @@ Checkpoint de continuidad solicitado por el usuario antes de limpiar el contexto
 Capturado inicialmente el 2026-09-07 a las 10:16 UTC. La reconciliacion siguiente
 prima sobre esa captura y los informes historicos; comprueba el estado real al volver.
 
+## Cambio De Flujo Del Fork (En Curso, 2026-09-07)
+
+El usuario autorizo el push posterior a la entrega: `19d1c8836c` ya esta en
+`origin/main-kukapu`, comprobado con ls-remote y arbol limpio. Despues decidio:
+`main-kukapu` es nuestra rama principal, `origin/main-kukapu` su copia y base
+habitual de comparacion; `upstream/main` solo es la fuente oficial que integramos.
+No necesitamos PRs ni actualizar `origin/main` para trabajar en el fork.
+
+Solicito documentarlo, adaptar la automatizacion diaria existente y fijar GPT-6
+Astra en ese agente. Automatizacion `orca-upstream-sync`, id
+`3eb73380-5393-4ded-bc72-340a137008f6`, OpenCode, `new_per_run`, rama
+`main-kukapu`, misma autoridad local. NO crear otra ni tocar Postiz.
+
+Bloqueo comprobado: runtime `.1` ignora `model` incluso usando
+`node out/cli/index.js automations edit <id> --model openai/gpt-6-astra`.
+La respuesta fue ok pero NO guardo el campo. El soporte ya esta en el candidato
+`.2` (commit `63a3944846`, integrado). Catalogo local confirma
+`openai/gpt-6-astra`. No se cambio config global de OpenCode ni se sustituyo modelo.
+
+El usuario eligio **"Voy A Instalar Ahora"**, desde su terminal externa. No
+instalar ni reiniciar nosotros. Si se interrumpe esta conversacion, reconciliar
+el mismo Run `run_3bc1b0c65acb` y runtime antes de actuar. Pendiente:
+
+1. Comprobar runtime `ready`, `.2` y runtimeId nuevo despues de SU instalacion.
+2. Fijar base de Orca `origin/main-kukapu`; tracking Git ya era correcto.
+3. Cambiar default branch GitHub a `main-kukapu` tras revisar automatizaciones:
+   habia permiso ADMIN, Actions enabled, pero listado de workflows registrado vacio.
+   No activar CI, ejecutar workflows ni modificar otros repositorios.
+4. Actualizar prompt/precheck de la automatizacion existente, base remota al dia,
+   preservar fork/local concurrente, push normal tras gates y sin tocar checkout
+   principal activo ni instalar/empaquetar/reiniciar. Fijar modelo en campo real,
+   no solo en prompt, y comprobarlo con automation.show.
+5. Mantener horario sin reprogramacion accidental: RRULE actual
+   `FREQ=DAILY;BYHOUR=5;BYMINUTE=0`, timezone declarada `Europe/Madrid`, host UTC.
+   nextRunAt `1788843600000` = 2026-09-08 05:00 UTC / 07:00 Madrid.
+   El calculo actual usa timezone del host; no prometer ajuste DST automatico.
+6. Documentar el flujo y resultado, verificar configuracion por lectura. No
+   lanzar agentes para probar el modelo, ni repetir build/pack del candidato.
+
+### Aplicado Durante La Espera De Instalacion
+
+- GitHub `kukapu/orca`: default branch cambiada de `main` a `main-kukapu` y
+  comprobada con gh. `origin/HEAD` local ahora apunta a `origin/main-kukapu`.
+- Orca: `repo set-base-ref` guardo `worktreeBaseRef=origin/main-kukapu` en el
+  registro existente. No se crearon repos, proyectos, worktrees o workers.
+- Se actualizo el documento canonico `docs/reference/upstream-sync-automation.md`,
+  AGENTS.md y las guias de uso. El documento antiguo permitia snapshots de WIP
+  ajeno, bypass de hooks y prioridad incondicional upstream: reglas retiradas.
+- Prompt y precheck NUEVOS ya aplicados a la automatizacion existente mediante
+  CLI y comprobados iguales al documento. Base `origin/main-kukapu`, OpenCode,
+  new_per_run/fresh; enabled/horario/owner/proyecto conservados. Postiz intacto.
+- Modelo AUN PENDIENTE porque el runtime sigue `.1`. Tras instalacion externa,
+  ejecutar `node /tmp/opencode/configure-orca-upstream-sync.mjs`: reutiliza la
+  CLI ya compilada, lee prompt/precheck del documento, exige readback y, solo
+  con runtime `.2`, fija `openai/gpt-6-astra` sin effort. No compila ni lanza agentes.
+  No dar por concluida la asignacion hasta ver `modelAssigned: true`.
+- Copia previa de la definicion sin secretos:
+  `/tmp/opencode/orca-upstream-sync-before-workflow.json` (solo scratch privado).
+  Si no existen los scripts tras retomar, usar `orca automations edit --help`
+  de `.2` y la definicion canonica; no usar el helper de un paquete `.1` antiguo.
+
 ## Entrega Preparada 2026-09-07 10:44 UTC
 
 - Candidato fechado aceptado; [informe final, comando externo y rollback](./release-delivery-197-2-20260907.md).
