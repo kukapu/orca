@@ -58,6 +58,15 @@ Consulta el [contrato SSH](../reference/ssh-execution-boundary.md) para sus limi
 - En revisiones de codigo, no presupongas GitHub: respeta el proveedor del proyecto.
 - Las credenciales pertenecen al host de ejecucion. No las copies a prompts, logs o fixtures.
 
+## Ramas Del Fork Orca
+
+Nuestra rama principal y predeterminada es `main-kukapu`; su tracking y base
+habitual de comparacion son `origin/main-kukapu`. El oficial `upstream/main`
+solo se incorpora mediante sincronizacion verificada, sin PRs automaticas ni
+pasar por `main` local. El agente diario trabaja en su propio worktree y no
+recoge WIP ni actualiza el checkout principal de otros agentes. Contrato y prompt:
+[flujo del fork](../reference/upstream-sync-automation.md).
+
 ## Si se pierde la conexion
 
 Los veredictos de proceso son `live`, `unverifiable` y `exited`. Un timeout o
