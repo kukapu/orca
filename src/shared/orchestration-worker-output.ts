@@ -23,6 +23,8 @@ export type ExactWorkerProviderSession = {
   agent: AgentType
   providerSession: AgentProviderSessionMetadata
   observedAt: number
+  /** SSH target id when the worker PTY is not on this process; omit/null for local. */
+  connectionId?: string | null
 }
 
 export type OrchestrationWorkerTranscriptPage = {

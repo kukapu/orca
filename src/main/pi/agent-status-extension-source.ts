@@ -12,6 +12,7 @@
 // any Orca dep into the pi runtime.
 import type { PiAgentKind } from '../../shared/pi-agent-kind'
 import { getPiAgentStatusHandlerSourceLines } from './agent-status-handler-source'
+import { getPiAgentStatusPostQueueSourceLines } from './agent-status-post-queue-source'
 import { getPiAgentStatusRuntimeDetectionSourceLines } from './agent-status-runtime-detection-source'
 import { getPiAgentStatusWslCurlSourceLines } from './agent-status-wsl-curl-source'
 
@@ -47,14 +48,14 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
           '  return ompRuntime ? runtimeOmpSessionMetadata : sessionMetadata',
           '}',
           '',
-          'function getPersistedSessionMetadata(): Record<string, unknown> {',
-          '  const sessionFile = sessionMetadata.session_file',
+          'function getPersistedSessionMetadata(metadata: Record<string, unknown>): Record<string, unknown> {',
+          '  const sessionFile = metadata.session_file',
           "  if (typeof sessionFile !== 'string' || !sessionFile) return {}",
           '  try {',
           "    const fs = require('fs')",
           '    // Why: Pi publishes its planned path before creating the transcript;',
           '    // recheck on every post so the first completed turn becomes resumable.',
-          '    return fs.existsSync(sessionFile) ? sessionMetadata : {}',
+          '    return fs.existsSync(sessionFile) ? metadata : {}',
           '  } catch {',
           '    return {}',
           '  }',
@@ -83,7 +84,7 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
   // Why: Pi resumes from an existing transcript; OMP resumes directly by session id (#8962).
   const payloadLine =
     kind !== 'omp'
-      ? '    payload: { hook_event_name: hookEventName, ...(ompRuntime ? metadata : getPersistedSessionMetadata()), ...extra },'
+      ? '    payload: { hook_event_name: hookEventName, ...(ompRuntime ? metadata : getPersistedSessionMetadata(metadata)), ...extra },'
       : '    payload: { hook_event_name: hookEventName, ...metadata, ...extra },'
 
   // Why: keep this string self-contained — it runs inside the pi process,
@@ -96,12 +97,8 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     '// Why: warn-once so a recurring parse error on a malformed endpoint',
     '// file does not spam stderr inside the pi TUI on every event.',
     'let warnedBadEndpoint = false',
-    '// Why: Pi awaits extension handlers. Status delivery stays off that',
-    '// critical path, and the latest-only pending slot prevents a stalled',
-    '// Orca receiver from building an unbounded queue of obsolete snapshots.',
+    '// Why: Pi awaits handlers; bounded status delivery stays off that critical path.',
     'const HOOK_POST_TIMEOUT_MS = 1000',
-    'let activePost = false',
-    'let pendingPost: { hookEventName: string; extra: Record<string, unknown>; metadata: Record<string, unknown>; ompRuntime: boolean } | null = null',
     ...sessionMetadataSourceLines,
     '',
     '// Why: re-reading the endpoint file on every event is cheap (small file,',
@@ -160,30 +157,7 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     '',
     ...getPiAgentStatusRuntimeDetectionSourceLines(kind),
     '',
-    'function post(hookEventName: string, extra: Record<string, unknown> = {}): void {',
-    '  const ompRuntime = isOmpRuntime()',
-    '  pendingPost = {',
-    '    hookEventName,',
-    '    extra,',
-    '    metadata: getPostSessionMetadata(ompRuntime),',
-    '    ompRuntime,',
-    '  }',
-    '  drainPosts()',
-    '}',
-    '',
-    'function drainPosts(): void {',
-    '  if (activePost || !pendingPost) return',
-    '  const next = pendingPost',
-    '  pendingPost = null',
-    '  activePost = true',
-    '  void postOnce(next.hookEventName, next.extra, next.metadata, next.ompRuntime)',
-    '    .catch(() => {})',
-    '    .finally(() => {',
-    '      activePost = false',
-    '      drainPosts()',
-    '    })',
-    '}',
-    '',
+    ...getPiAgentStatusPostQueueSourceLines(),
     'async function postOnce(',
     '  hookEventName: string,',
     '  extra: Record<string, unknown>,',

@@ -75,11 +75,11 @@ describe('OpenCode hook plugin source', () => {
     const digest = (source: string): string => createHash('sha256').update(source).digest('hex')
 
     expect(digest(getOpenCodePluginSource())).toBe(
-      'd14859a36c88aefe3a45cd232789503296e0a23438b151c773414bad64ab8eaa'
+      'aecb402475941a80e3a9b301cfbbdac4b951ce2bd70cbde05df337ca1bf21204'
     )
     expect(
       digest(getOpenCodeFamilyPluginSource('/hook/mimo-code', { emitSessionStart: false }))
-    ).toBe('4de14bee0c27ce55f29f70b19aa6ce9967e09b098bba139fb88f0511af7d4fca')
+    ).toBe('e47c7486dbab8ff48de68d2e6272a6d65d6dba812d2a66a26d50d7e14d63d038')
   })
 
   it('filters child sessions via parentID lookup before forwarding events', () => {

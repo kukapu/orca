@@ -142,6 +142,45 @@ describe('tui agent startup plans', () => {
     expect(plan?.launchCommand).toBe("codex '--version'")
   })
 
+  describe.each([
+    { platform: 'linux', shell: 'posix', quote: "'" },
+    { platform: 'win32', shell: 'powershell', quote: "'" },
+    { platform: 'win32', shell: 'cmd', quote: '"' }
+  ] as const)('Pi positional prompts on $shell', ({ platform, shell, quote }) => {
+    it.each(['--help', '--version', '-...', '-h', 'ordinary prompt'])(
+      'terminates options before %j locally and over SSH',
+      (prompt) => {
+        for (const isRemote of [false, true]) {
+          const plan = buildAgentStartupPlan({
+            agent: 'pi',
+            prompt,
+            cmdOverrides: {},
+            platform,
+            shell,
+            isRemote
+          })
+          expect(plan?.launchCommand).toBe(`pi -- ${quote}${prompt}${quote}`)
+          const parsed = tokenizeStartupCommand(plan?.launchCommand ?? '', shell)
+          expect(parsed.ok && parsed.tokens).toEqual(['pi', '--', prompt])
+          expect(plan?.followupPrompt).toBeNull()
+          expect(plan?.launchConfig).toEqual({ agentCommand: 'pi', agentArgs: '', agentEnv: {} })
+        }
+      }
+    )
+  })
+
+  it.each([
+    { platform: 'linux', shell: 'posix', quoted: `'-- Bob'"'"'s "quoted" & %PATH% $HOME'` },
+    { platform: 'win32', shell: 'powershell', quoted: `'-- Bob''s "quoted" & %PATH% $HOME'` },
+    { platform: 'win32', shell: 'cmd', quoted: `"-- Bob's ^"quoted^" ^& ^%PATH^% $HOME"` }
+  ] as const)('preserves Pi prompt quoting on $shell', ({ platform, shell, quoted }) => {
+    const prompt = `-- Bob's "quoted" & %PATH% $HOME`
+    const plan = buildAgentStartupPlan({ agent: 'pi', prompt, cmdOverrides: {}, platform, shell })
+    expect(plan?.launchCommand).toBe(`pi -- ${quoted}`)
+    const parsed = tokenizeStartupCommand(plan?.launchCommand ?? '', shell)
+    expect(parsed.ok && parsed.tokens).toEqual(['pi', '--', prompt])
+  })
+
   it.each([
     { platform: 'linux' as const, shell: 'posix' as const },
     { platform: 'win32' as const, shell: 'powershell' as const },

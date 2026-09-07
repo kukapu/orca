@@ -484,6 +484,41 @@ Fix dispatch fallback preview for normalized status prompts`
     ).toBe(1767225601000)
   })
 
+  it('preserves observed thinkingLevel and variant as optional single-line fields', () => {
+    const result = parseAgentStatusPayload(
+      JSON.stringify({ state: 'working', thinkingLevel: 'xhigh', variant: 'fast' })
+    )
+    expect(result!.thinkingLevel).toBe('xhigh')
+    expect(result!.variant).toBe('fast')
+  })
+
+  it('treats absent, empty, or non-string thinkingLevel/variant as undefined', () => {
+    expect(parseAgentStatusPayload('{"state":"working"}')!.thinkingLevel).toBeUndefined()
+    expect(parseAgentStatusPayload('{"state":"working"}')!.variant).toBeUndefined()
+    for (const raw of [
+      '{"state":"working","thinkingLevel":"","variant":"  "}',
+      '{"state":"working","thinkingLevel":42,"variant":null}'
+    ]) {
+      const result = parseAgentStatusPayload(raw)!
+      expect(result.thinkingLevel).toBeUndefined()
+      expect(result.variant).toBeUndefined()
+    }
+  })
+
+  it('carries thinkingLevel and variant through the client-visible payload projection', () => {
+    const picked = pickParsedAgentStatusPayload({
+      state: 'working',
+      prompt: '',
+      thinkingLevel: 'high',
+      variant: 'code'
+    })
+    expect(picked.thinkingLevel).toBe('high')
+    expect(picked.variant).toBe('code')
+    expect(
+      pickParsedAgentStatusPayload({ state: 'working', prompt: '' }).thinkingLevel
+    ).toBeUndefined()
+  })
+
   it('requires strict boolean true for interrupted (rejects truthy non-boolean)', () => {
     // Why: parser uses `=== true`, so truthy string/number sentinels don't count.
     expect(

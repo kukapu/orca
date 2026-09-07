@@ -10,11 +10,19 @@ import type {
   AgentStatusObservationOrigin
 } from '../../../shared/agent-status-observation'
 import type { EnrichedAgentHookEventPayload } from './server-types'
-import { agentTypeToPromptSentAgentKind } from './server-status-identity'
+import {
+  agentTypeToPromptSentAgentKind,
+  isObservedOptionsSessionFenceScoped,
+  isProviderSessionAnnouncement,
+  isProviderSessionUserTurn
+} from './server-status-identity'
 import { AgentHookServerStatusDisposition } from './server-status-disposition'
 
 /** Bounds the retained observation clock; eviction only degrades a replay to `now`. */
 const MAX_REMEMBERED_EVIDENCE_OBSERVATIONS = 1024
+
+/** Bounds the retained observed-options side table (one row per pane). */
+export const MAX_REMEMBERED_OBSERVED_OPTIONS = 1024
 
 export abstract class AgentHookServerStatusApplication extends AgentHookServerStatusDisposition {
   protected attachStatusTiming(
@@ -74,6 +82,44 @@ export abstract class AgentHookServerStatusApplication extends AgentHookServerSt
       this.evidenceObservedAtByPaneKey.delete(oldest)
     }
     return observedAt
+  }
+
+  /** Record the pane's live session, but only for accepted events: replays
+   *  restate old evidence and disposition-rejected rows never land. Only
+   *  births (SessionStart/session_start) and user-turns contest liveness —
+   *  turn content never does, so a straggler cannot move authority by arriving.
+   *  A new generation establishes itself with its first birth; same-session
+   *  re-announcements are always safe (resume/duplicate). */
+  protected recordSessionAuthorityOnAccept(payload: AgentHookEventPayload): void {
+    if (payload.isReplay === true || !isObservedOptionsSessionFenceScoped(payload)) {
+      return
+    }
+    const sessionId = payload.providerSession?.id
+    const source = payload.source
+    if (!sessionId || source === undefined) {
+      return
+    }
+    if (!isProviderSessionAnnouncement(payload) && !isProviderSessionUserTurn(payload)) {
+      return
+    }
+    // Why: the host's live PTY registry outranks any hook birth — a token this
+    // pane's connected pty never minted cannot become its session authority.
+    if (this.isForeignLaunchGeneration(payload.paneKey, payload.launchToken)) {
+      return
+    }
+    this.announcedProviderSessionByPaneKey.delete(payload.paneKey)
+    this.announcedProviderSessionByPaneKey.set(payload.paneKey, {
+      sessionId,
+      source,
+      ...(payload.launchToken ? { launchToken: payload.launchToken } : {})
+    })
+    while (this.announcedProviderSessionByPaneKey.size > MAX_REMEMBERED_OBSERVED_OPTIONS) {
+      const oldest = this.announcedProviderSessionByPaneKey.keys().next().value
+      if (typeof oldest !== 'string') {
+        break
+      }
+      this.announcedProviderSessionByPaneKey.delete(oldest)
+    }
   }
 
   protected hashPromptForTelemetryDedupe(prompt: string): string {

@@ -197,6 +197,7 @@ export abstract class AgentHookServerCleanup extends AgentHookServerAuthorityFen
     }
     this.state.lastStatusByPaneKey.delete(resolvedPaneKey)
     this.activeHookTurnCompletedAtByPaneKey.delete(resolvedPaneKey)
+    this.lastObservedOptionsByPaneKey.delete(resolvedPaneKey)
     if (!options?.preserveAuthority) {
       this.hydratedLaunchTokenHashByPaneKey.delete(resolvedPaneKey)
       this.persistedAuthorityCommitmentsByPaneKey.delete(resolvedPaneKey)

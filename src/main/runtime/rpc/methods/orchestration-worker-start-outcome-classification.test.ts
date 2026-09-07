@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { OrchestrationDb } from '../../orchestration/db'
+import { failWorkerStartWithReceipt } from './orchestration-worker-start-receipt'
+import { failFederatedAttachmentWithReceipt } from './orchestration-federation-start-receipt'
+import { createWorkerLaunchReceipt } from './orchestration-worker-launch-preferences'
 import { isUnknownWorkerStartOutcome } from './orchestration-worker-topology'
 
 describe('worker start outcome classification', () => {
@@ -28,5 +32,49 @@ describe('worker start outcome classification', () => {
     expect(isUnknownWorkerStartOutcome(new Error('agent_prompt_stalled'), 'dispatch_input')).toBe(
       false
     )
+  })
+
+  it.each([
+    { mode: 'local', failStart: failWorkerStartWithReceipt },
+    { mode: 'federated', failStart: failFederatedAttachmentWithReceipt }
+  ])('preserves a relayed stalled error code in $mode receipts', ({ mode, failStart }) => {
+    const recordFailure = vi.fn(() => ({
+      state: 'failed',
+      stage: 'dispatch_input',
+      effects: '[]',
+      residual_resources: '[]'
+    }))
+    const receipt = failStart({
+      db: {
+        failWorkerStart: recordFailure,
+        failRemoteAttachment: recordFailure
+      } as unknown as OrchestrationDb,
+      runId: 'run_test',
+      taskId: 'task_test',
+      dispatchId: 'ctx_test',
+      runtimeEpoch: 'epoch_test',
+      failedStage: 'dispatch_input',
+      error: { code: 'agent_prompt_stalled', message: 'Remote prompt effect was not observed' },
+      setup: {
+        requested: 'not_applicable',
+        effective: 'not_applicable',
+        source: 'test',
+        hookFound: false,
+        startupPolicy: 'start-immediately',
+        state: 'not_applicable'
+      },
+      launch: createWorkerLaunchReceipt({ agent: 'pi' })
+    })
+
+    expect(recordFailure).toHaveBeenCalledWith(
+      'ctx_test',
+      'dispatch_input',
+      'agent_prompt_stalled',
+      expect.anything(),
+      // Federated receipts additionally retain the capability so the worker's own
+      // late report can correct the unobserved-prompt record.
+      ...(mode === 'federated' ? [{ retainCapability: true }] : [])
+    )
+    expect(receipt).toMatchObject({ state: 'failed', lastError: 'agent_prompt_stalled' })
   })
 })

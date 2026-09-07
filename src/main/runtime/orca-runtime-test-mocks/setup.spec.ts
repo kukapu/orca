@@ -163,6 +163,7 @@ const {
   applyAgentStatusHooksEnabledMock,
   detectInstalledAgentsWithShellPathHydrationMock,
   detectRemoteAgentsMock,
+  detectRemoteAgentsStatusMock,
   markCodexProjectTrustedMock,
   markCopilotFolderTrustedMock,
   markCursorWorkspaceTrustedMock,
@@ -274,6 +275,11 @@ const {
     applyAgentStatusHooksEnabledMock: vi.fn() as TestMock,
     detectInstalledAgentsWithShellPathHydrationMock: vi.fn() as TestMock,
     detectRemoteAgentsMock: vi.fn() as TestMock,
+    // Why: fail-open default mirrors the module's disconnected-host contract;
+    // tests wanting an answered host override the mock explicitly.
+    detectRemoteAgentsStatusMock: vi.fn(async (): Promise<{ status: 'unreachable' }> => ({
+      status: 'unreachable'
+    })) as TestMock,
     markCodexProjectTrustedMock: vi.fn() as TestMock,
     markCopilotFolderTrustedMock: vi.fn() as TestMock,
     markCursorWorkspaceTrustedMock: vi.fn() as TestMock,
@@ -350,7 +356,8 @@ vi.mock('../../ssh/ssh-target-registry', () => ({
 
 vi.mock('../../preflight/agent-detection', () => ({
   detectInstalledAgentsWithShellPathHydration: detectInstalledAgentsWithShellPathHydrationMock,
-  detectRemoteAgents: detectRemoteAgentsMock
+  detectRemoteAgents: detectRemoteAgentsMock,
+  detectRemoteAgentsStatus: detectRemoteAgentsStatusMock
 }))
 
 vi.mock('../../agent-hooks/managed-agent-hook-controls', () => ({
@@ -632,6 +639,7 @@ export {
   applyAgentStatusHooksEnabledMock,
   detectInstalledAgentsWithShellPathHydrationMock,
   detectRemoteAgentsMock,
+  detectRemoteAgentsStatusMock,
   markCodexProjectTrustedMock,
   markCopilotFolderTrustedMock,
   markCursorWorkspaceTrustedMock,

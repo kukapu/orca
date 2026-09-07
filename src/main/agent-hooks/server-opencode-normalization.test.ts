@@ -109,6 +109,40 @@ describe('OpenCode hook normalization', () => {
     expect(result?.promptInteractionKey).toBe('opencode-message-msg-1')
   })
 
+  it('keeps observed model and variant on assistant MessagePart evidence', () => {
+    const result = _internals.normalizeHookPayload(
+      'opencode',
+      buildBody({
+        hook_event_name: 'MessagePart',
+        role: 'assistant',
+        text: 'here is the edit',
+        messageID: 'msg-2',
+        model: 'xai/grok-4.6',
+        variant: 'code'
+      }),
+      'production'
+    )
+    expect(result?.payload.state).toBe('working')
+    expect(result?.payload.model).toBe('xai/grok-4.6')
+    expect(result?.payload.variant).toBe('code')
+  })
+
+  it('leaves options undefined when an older plugin posts MessagePart without them', () => {
+    const result = _internals.normalizeHookPayload(
+      'opencode',
+      buildBody({
+        hook_event_name: 'MessagePart',
+        role: 'assistant',
+        text: 'legacy plugin reply',
+        messageID: 'msg-3'
+      }),
+      'production'
+    )
+    expect(result?.payload.model).toBeUndefined()
+    expect(result?.payload.thinkingLevel).toBeUndefined()
+    expect(result?.payload.variant).toBeUndefined()
+  })
+
   it('MessagePart with role=assistant populates lastAssistantMessage', () => {
     const result = _internals.normalizeHookPayload(
       'opencode',

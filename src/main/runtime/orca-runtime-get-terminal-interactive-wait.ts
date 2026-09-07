@@ -10,6 +10,11 @@ import { TERMINAL_INTERACTIVE_WAIT_PROBE_TIMEOUT_MS } from './orca-runtime-core'
 import { parsePaneKey } from '../../shared/stable-pane-id'
 import type { ExactWorkerProviderSession } from '../../shared/orchestration-worker-output'
 import { selectExactWorkerProviderSession } from './orchestration/worker-provider-session'
+import {
+  selectExactWorkerObservedOptions,
+  type WorkerObservedOptionsCandidateRow,
+  type WorkerObservedOptionsSelection
+} from './orchestration/worker-observed-options'
 import type { TuiAgent } from '../../shared/tui-agent'
 import { isTuiAgentEnabled } from '../../shared/tui-agent-selection'
 import { OrchestrationError } from './orchestration/orchestration-error'
@@ -132,10 +137,12 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
     return `${this.runtimeId}:${record.ptyId}:${record.ptyGeneration}`
   }
 
-  getExactWorkerProviderSession(
-    handle: string,
-    observedAfter: number
-  ): ExactWorkerProviderSession | null {
+  private resolveExactWorkerStatusScope(handle: string): {
+    paneKey: string
+    processIncarnation: string
+    connectionId: string | null | undefined
+    launchToken: string | null | undefined
+  } | null {
     const paneKey = this.getTerminalPaneKey(handle)
     const processIncarnation = this.getTerminalProcessIncarnation(handle)
     if (!paneKey || !processIncarnation) {
@@ -153,13 +160,48 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
       connectionId = undefined
       launchToken = undefined
     }
+    return { paneKey, processIncarnation, connectionId, launchToken }
+  }
+
+  getExactWorkerProviderSession(
+    handle: string,
+    observedAfter: number
+  ): ExactWorkerProviderSession | null {
+    const scope = this.resolveExactWorkerStatusScope(handle)
+    if (!scope) {
+      return null
+    }
     return selectExactWorkerProviderSession({
-      paneKey,
-      processIncarnation,
-      connectionId,
-      launchToken,
+      ...scope,
       observedAfter,
       statuses: this.getAgentStatusSnapshotFn?.() ?? []
+    })
+  }
+
+  /** Observed model/thinking evidence for the exact worker process, evaluated
+   *  on this host (the one that owns the terminal), never on the client.
+   *  Combines the hook server's observed-options side table with the mutable
+   *  status rows: the side table may legitimately be empty (no options evidence
+   *  yet) while status rows exist, and `??` would then misdiagnose
+   *  no_status_row instead of status_without_options. Fencing stays single-pass
+   *  in the shared exact-window selector, and the evidence clock gate rejects
+   *  stale rows from either source. */
+  getExactWorkerObservedOptions(
+    handle: string,
+    observedAfter: number
+  ): WorkerObservedOptionsSelection {
+    const scope = this.resolveExactWorkerStatusScope(handle)
+    if (!scope) {
+      return null
+    }
+    const rows: WorkerObservedOptionsCandidateRow[] = [
+      ...(this.getObservedOptionsSnapshotFn?.() ?? []),
+      ...(this.getAgentStatusSnapshotFn?.() ?? [])
+    ]
+    return selectExactWorkerObservedOptions({
+      ...scope,
+      observedAfter,
+      statuses: rows
     })
   }
 

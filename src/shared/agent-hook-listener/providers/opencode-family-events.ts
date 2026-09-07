@@ -5,6 +5,7 @@ import {
 import type { HookListenerState } from '../listener-state'
 import { resolvePrompt, resolveToolState } from '../prompt-fields'
 import { extractToolFields, isNewTurnEvent } from '../provider-event-routing'
+import { readString } from '../tool-input-preview'
 
 export function normalizeOpenCodeFamilyEvent(
   source: 'opencode' | 'mimo-code',
@@ -47,6 +48,10 @@ export function normalizeOpenCodeFamilyEvent(
       resetOnNewTurn: resetsTurn
     }),
     agentType: source,
+    // Why: only the plugin's assistant-message evidence carries these; the user
+    // message's model is a client selection, not execution confirmation.
+    model: readString(hookPayload, 'model'),
+    variant: readString(hookPayload, 'variant'),
     toolName: snapshot.toolName,
     toolInput: snapshot.toolInput,
     interactivePrompt: snapshot.interactivePrompt,

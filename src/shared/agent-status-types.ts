@@ -183,6 +183,10 @@ export type AgentStatusPayload = {
   prompt?: string
   agentType?: AgentType
   model?: string
+  /** Pi-family thinking level observed from the runtime at the event. Absent = not observed. */
+  thinkingLevel?: string
+  /** OpenCode-family run variant recorded on the executed message. Absent = not observed. */
+  variant?: string
   toolName?: string
   toolInput?: string
   /** JSON string of the AskUserQuestion tool input, captured live. See the
@@ -227,6 +231,8 @@ export function pickParsedAgentStatusPayload(
     prompt: row.prompt,
     ...(row.agentType !== undefined ? { agentType: row.agentType } : {}),
     ...(row.model !== undefined ? { model: row.model } : {}),
+    ...(row.thinkingLevel !== undefined ? { thinkingLevel: row.thinkingLevel } : {}),
+    ...(row.variant !== undefined ? { variant: row.variant } : {}),
     ...(row.toolName !== undefined ? { toolName: row.toolName } : {}),
     ...(row.toolInput !== undefined ? { toolInput: row.toolInput } : {}),
     ...(row.interactivePrompt !== undefined ? { interactivePrompt: row.interactivePrompt } : {}),
@@ -271,6 +277,8 @@ const VALID_STATES: ReadonlySet<string> = new Set<string>(AGENT_STATUS_STATES)
 /** Maximum character length for the agentType label. Truncated on parse. */
 export const AGENT_TYPE_MAX_LENGTH = 40
 export const AGENT_MODEL_MAX_LENGTH = 120
+/** Why: observed thinking levels / run variants are short provider tokens. */
+export const AGENT_STATUS_OPTION_MAX_LENGTH = 60
 
 /** Maximum subagent child rows carried per status entry. Bounds per-pane cache
  *  and IPC fanout against a runaway spawner. */
@@ -384,6 +392,8 @@ function normalizeAgentStatusObject(parsed: unknown): ParsedAgentStatusPayload |
     // Why: normalize like the other single-line fields so embedded newlines (e.g. `agentType: "claude\nrogue"`) can't break single-line UI and equality checks.
     agentType: normalizeOptionalField(obj.agentType, AGENT_TYPE_MAX_LENGTH),
     model: normalizeOptionalField(obj.model, AGENT_MODEL_MAX_LENGTH),
+    thinkingLevel: normalizeOptionalField(obj.thinkingLevel, AGENT_STATUS_OPTION_MAX_LENGTH),
+    variant: normalizeOptionalField(obj.variant, AGENT_STATUS_OPTION_MAX_LENGTH),
     toolName: normalizeOptionalField(obj.toolName, AGENT_STATUS_TOOL_NAME_MAX_LENGTH),
     toolInput: normalizeOptionalField(obj.toolInput, AGENT_STATUS_TOOL_INPUT_MAX_LENGTH),
     interactivePrompt: normalizeInteractivePromptField(

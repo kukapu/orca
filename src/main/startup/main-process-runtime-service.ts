@@ -85,6 +85,9 @@ export function initializeMainProcessRuntime(): OrcaRuntimeService {
     getAgentProviderSessionSnapshot: () => agentHookServer.getStatusSnapshot(),
     getAgentProviderSessionRowsForPane: (paneKey) =>
       agentHookServer.getStatusSnapshotForPane(paneKey),
+    // Why: exact-worker observed-option reads need evidence that outlives the
+    // mutable last-status row; the hook server keeps it in a bounded side table.
+    getObservedOptionsSnapshot: () => agentHookServer.getObservedOptionsSnapshot(),
     attestAgentHookCompatibilityAuthority: (candidate) =>
       agentHookServer.attestCompatibilityAuthority(candidate),
     retireAgentHookCompatibilityAuthority: (paneKey) =>
@@ -115,6 +118,13 @@ export function initializeMainProcessRuntime(): OrcaRuntimeService {
     skillTransactionRecovery: state.skillTransactionRecovery
   })
   state.runtime = runtime
+  // Why: session-authority fencing consults the runtime's live PTY registry (the
+  // same source exact-worker readers scope by) instead of trusting hook births —
+  // desktop and headless serve both promote through here, so one binding covers
+  // every host that owns the panes. Unbound hosts keep hook-data authority.
+  agentHookServer.setLiveLaunchTokenHashProvider((paneKey) =>
+    runtime.getLiveLaunchTokenHashForPaneKey(paneKey)
+  )
   runtime.prepareLegacyWorkerTerminalRecovery()
   // Why before anything can attach: a client host that reattaches to a restarted runtime is only
   // handed its pages back if the runtime found them first.

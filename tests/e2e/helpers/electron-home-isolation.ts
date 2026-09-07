@@ -1,6 +1,7 @@
 import { mkdirSync, realpathSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { AGENT_RUNTIME_DIR_ENV_KEYS } from './agent-runtime-dir-env-keys'
 
 const RESTRICTED_ENV_KEYS = new Set([
   'HOME',
@@ -14,7 +15,8 @@ const RESTRICTED_ENV_KEYS = new Set([
   'ZDOTDIR',
   'ORCA_ORIG_ZDOTDIR',
   'BASH_ENV',
-  'ENV'
+  'ENV',
+  ...AGENT_RUNTIME_DIR_ENV_KEYS
 ])
 
 type ElectronHomeIsolationOptions = {

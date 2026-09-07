@@ -15,10 +15,12 @@ import {
   type WorkerSetupReceipt
 } from './orchestration-worker-topology'
 import {
+  assertWorkerTuiIdleSatisfied,
   persistGatedSetupSpawnFailure,
   persistWorkerReadinessStage,
   persistWorkerSetupWaitOutcome
 } from './orchestration-worker-setup-gate'
+import { assertCreatedWorkerComposerReady } from './orchestration-worker-composer-gate'
 import { failWorkerStartWithReceipt } from './orchestration-worker-start-receipt'
 import { prepareLocalWorkerStart } from './orchestration-worker-start-validation'
 import { resolveDispatchCreator } from './orchestration-dispatch-creator'
@@ -223,23 +225,24 @@ export const ORCHESTRATION_WORKER_START_METHODS: RpcMethod[] = [
           throw new Error('Setup terminal failed to start before the gated agent launch.')
         }
         persistWorkerReadinessStage(setupStage)
-
         failedStage = 'agent_readiness'
+        const readinessStartedAt = Date.now()
         const wait = await runtime.waitForTerminal(terminalHandle, {
           condition: 'tui-idle',
           timeoutMs: readinessTimeoutMs
         })
         persistWorkerSetupWaitOutcome({ ...setupStage, wait })
-        if (!wait.satisfied) {
-          if (setupReceipt.state === 'failed') {
-            failedStage = 'setup_wait'
-          }
-          throw new Error(
-            wait.blockedReason
-              ? `Agent startup blocked: ${wait.blockedReason}`
-              : `Agent did not become ready (${wait.status}).`
-          )
-        }
+        assertWorkerTuiIdleSatisfied(wait, setupReceipt, () => {
+          failedStage = 'setup_wait'
+        })
+        const remainingMs = readinessTimeoutMs - (Date.now() - readinessStartedAt)
+        await assertCreatedWorkerComposerReady(
+          runtime,
+          terminalHandle,
+          agent,
+          params.terminal,
+          remainingMs
+        )
         const terminalAuthority = requireWorkerAuthority(runtime, terminalHandle)
         const capability = db.prepareStartingWorkerAuthority({
           dispatchId: started.dispatch.id,
@@ -250,7 +253,6 @@ export const ORCHESTRATION_WORKER_START_METHODS: RpcMethod[] = [
           setupState: setupReceipt.state,
           terminalOwnership: params.terminal ? 'external' : 'created'
         })
-
         failedStage = 'dispatch_input'
         const preamble = buildDispatchPreamble({
           canDispatchSubWorkers: started.dispatch.depth < runtime.getNestedWorkerMaxDepth(),

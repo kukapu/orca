@@ -38,6 +38,47 @@ describe('Pi hook normalization', () => {
     expect(result?.payload.prompt).toBe('rename this fn')
   })
 
+  it('keeps observed model and thinking level as runtime evidence', () => {
+    const result = _internals.normalizeHookPayload(
+      'pi',
+      buildBody({
+        hook_event_name: 'before_agent_start',
+        prompt: 'rename this fn',
+        model: 'zai/glm-5.3',
+        thinking_level: 'xhigh'
+      }),
+      'production'
+    )
+    expect(result?.payload.model).toBe('zai/glm-5.3')
+    expect(result?.payload.thinkingLevel).toBe('xhigh')
+  })
+
+  it('keeps observed options on tool events of the same turn', () => {
+    const result = _internals.normalizeHookPayload(
+      'pi',
+      buildBody({
+        hook_event_name: 'tool_call',
+        tool_name: 'edit',
+        model: 'zai/glm-5.3',
+        thinking_level: 'off'
+      }),
+      'production'
+    )
+    expect(result?.payload.model).toBe('zai/glm-5.3')
+    expect(result?.payload.thinkingLevel).toBe('off')
+  })
+
+  it('leaves options undefined when an older extension posts without them', () => {
+    const result = _internals.normalizeHookPayload(
+      'pi',
+      buildBody({ hook_event_name: 'before_agent_start', prompt: 'legacy extension' }),
+      'production'
+    )
+    expect(result?.payload.model).toBeUndefined()
+    expect(result?.payload.thinkingLevel).toBeUndefined()
+    expect(result?.payload.variant).toBeUndefined()
+  })
+
   it('OMP uses Pi-compatible events but keeps OMP agent attribution', () => {
     const started = _internals.normalizeHookPayload(
       'omp',

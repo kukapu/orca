@@ -7,20 +7,23 @@ export function getPiAgentStatusHandlerSourceLines(kind: PiAgentKind): string[] 
     kind !== 'omp'
       ? [
           "  pi.on('session_start', (event, ctx) => {",
+          '    captureSessionContext(ctx)',
           '    updateSessionMetadata(ctx)',
           '    // Why: /reload re-registers the active session, but it is not a',
           '    // turn boundary and must not clear the visible status or unread state.',
           "    if (event.reason === 'reload') return",
+          '    clearPendingAgentEndCheck()',
+          '    agentEndReported = false',
           "    post('session_start')",
           '  })',
           ''
         ]
       : []
 
-  // Why: OMP can switch sessions in-process, so each latest-only post needs fresh identity.
+  // Why: all runtimes can switch sessions in-process while older posts are pending.
   const ctxParam = ', ctx'
   const bareCtxParams = '_event, ctx'
-  const captureSessionMetadata = ['    updateRuntimeOmpSessionMetadata(ctx)']
+  const captureSessionMetadata = ['    captureSessionContext(ctx)']
   const primeDaemonWorkerGuard =
     kind === 'prime-agent'
       ? [
@@ -108,15 +111,47 @@ export function getPiAgentStatusHandlerSourceLines(kind: PiAgentKind): string[] 
     '  const selfPid = String(process.pid)',
     '  if (ownerPid && ownerPid !== selfPid && isOwnerAlive(ownerPid)) return',
     `  process.env.${ownerEnv} = selfPid`,
+    '  let sessionScopeId: unknown',
+    '  let sessionScopeFile: unknown',
+    '  function captureObservedOptions(ctx): void {',
+    '    const model = (ctx as { model?: { id?: unknown; provider?: unknown } } | null)?.model',
+    '    observedModel =',
+    "      model && typeof model === 'object' && typeof model.id === 'string' && typeof model.provider === 'string' && model.id && model.provider",
+    '        ? `${model.provider}/${model.id}`',
+    "        : ''",
+    '    const thinking = (ctx as { thinkingLevel?: unknown } | null)?.thinkingLevel',
+    "    observedThinking = typeof thinking === 'string' && thinking ? thinking : ''",
+    '  }',
+    '  function captureSessionContext(ctx): void {',
+    '    captureObservedOptions(ctx)',
+    '    const manager = ctx?.sessionManager',
+    '    if (manager) {',
+    '      const id = manager.getSessionId?.()',
+    '      const file = manager.getSessionFile?.()',
+    '      if (id !== sessionScopeId || file !== sessionScopeFile) {',
+    '        sessionScopeId = id',
+    '        sessionScopeFile = file',
+    '        postScope += 1',
+    '        clearPendingAgentEndCheck()',
+    '        agentEndReported = false',
+    '      }',
+    '      updateSessionMetadata(ctx)',
+    '    }',
+    '    updateRuntimeOmpSessionMetadata(ctx)',
+    '  }',
     ...sessionStartHandler,
     `  pi.on('before_agent_start', (event${ctxParam}) => {`,
     ...captureSessionMetadata,
+    '    clearPendingAgentEndCheck()',
+    '    agentEndReported = false',
     "    post('before_agent_start', { prompt: event.prompt ?? '' })",
     '  })',
     '',
     `  pi.on('agent_start', (${bareCtxParams}) => {`,
     ...captureSessionMetadata,
     '    clearPendingAgentEndCheck()',
+    '    // Why: some runtimes announce activity before the next prompt boundary.',
+    '    if (agentEndReported) postScope += 1',
     '    agentEndReported = false',
     "    post('agent_start')",
     '  })',

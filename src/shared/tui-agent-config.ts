@@ -137,6 +137,8 @@ const TUI_AGENT_CONFIG_SOURCE: Record<TuiAgent, TuiAgentConfigSource> = {
   pi: {
     detectCmd: 'pi',
     promptInjectionMode: 'argv',
+    // Why: Pi's documented `--` keeps flag-shaped prompts from becoming CLI options.
+    argvPromptSeparator: '--',
     // Why: pi has no `--prefill` and paste-after-ready races its long startup; the orca-prefill extension seeds this env var instead.
     draftPromptEnvVar: 'ORCA_PI_PREFILL',
     // Why: Pi decodes CSI-u; Esc+CR submits after tool subprocesses reset live KKP state (#9703).

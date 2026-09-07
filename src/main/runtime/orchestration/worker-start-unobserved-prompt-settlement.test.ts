@@ -48,6 +48,17 @@ describe('worker start settled by an unobserved prompt', () => {
     })
     expect(verify(dispatchId, capability)).toEqual({ valid: true })
 
+    expect(() =>
+      db.createStartingWorkerDispatch({
+        creator: { kind: 'system' },
+        maxDepth: Number.MAX_SAFE_INTEGER,
+        taskId,
+        retryOf: dispatchId,
+        startOptions: {}
+      })
+    ).toThrow('agent_prompt_stalled')
+    expect(verify(dispatchId, capability)).toEqual({ valid: true })
+
     expect(
       db.settleWorkerReport({
         taskId,
@@ -98,5 +109,78 @@ describe('worker start settled by an unobserved prompt', () => {
       db.settleWorkerReport({ taskId, dispatchId, outcome: 'failed', result: 'again' })
     ).toEqual({ action: 'settled', outcome: 'failed', duplicate: true })
     expect(db.getTask(taskId)?.result).toBe('build broke on X')
+
+    expect(
+      db.createStartingWorkerDispatch({
+        creator: { kind: 'system' },
+        maxDepth: Number.MAX_SAFE_INTEGER,
+        taskId,
+        retryOf: dispatchId,
+        startOptions: {}
+      }).worker.state
+    ).toBe('starting')
+  })
+
+  it.each([true, false])(
+    'rejects a stalled retry atomically even when retainCapability is %s',
+    (retainCapability) => {
+      db = new OrchestrationDb(':memory:')
+      const { taskId, dispatchId, capability } = startWorker('do not duplicate work')
+      db.failWorkerStart(dispatchId, 'dispatch_input', 'agent_prompt_stalled', {
+        retainCapability
+      })
+      const request = {
+        creator: { kind: 'system' as const },
+        maxDepth: Number.MAX_SAFE_INTEGER,
+        taskId,
+        retryOf: dispatchId,
+        startOptions: {},
+        federation: {
+          environmentId: 'remote',
+          environmentName: 'Worker server',
+          peerFingerprint: 'remote-peer',
+          protocolVersion: 1
+        },
+        mutationReceipt: {
+          callerFingerprint: 'coordinator',
+          requestId: 'stalled-retry',
+          method: 'orchestration.workerStart',
+          payloadHash: 'retry-input'
+        }
+      }
+
+      expect(() => db.createStartingWorkerDispatch(request)).toThrow(
+        expect.objectContaining({
+          code: 'task_not_startable',
+          data: expect.objectContaining({ taskId, status: 'failed', retryOf: dispatchId })
+        })
+      )
+      expect(db.getDispatchContext(taskId)?.id).toBe(dispatchId)
+      expect(db.getTask(taskId)?.status).toBe('failed')
+      expect(db.getMutationReceipt('coordinator', 'stalled-retry')).toBeUndefined()
+      expect(db.listActiveFederatedDispatches()).toEqual([])
+      expect(verify(dispatchId, capability).valid).toBe(retainCapability)
+
+      // Abandon is an explicit authority decision, not proof that execution stopped.
+      expect(db.abandonWorkerDispatch(dispatchId).disposition).toBe('abandoned')
+      expect(db.createStartingWorkerDispatch(request).worker.state).toBe('starting')
+    }
+  )
+
+  it('does not bypass stalled-work protection by marking the Task ready', () => {
+    db = new OrchestrationDb(':memory:')
+    const { taskId, dispatchId } = startWorker('same task, same possible process')
+    db.failWorkerStart(dispatchId, 'dispatch_input', 'agent_prompt_stalled')
+    db.updateTaskStatus(taskId, 'ready')
+
+    expect(() =>
+      db.createStartingWorkerDispatch({
+        creator: { kind: 'system' },
+        maxDepth: Number.MAX_SAFE_INTEGER,
+        taskId,
+        startOptions: {}
+      })
+    ).toThrow('agent_prompt_stalled')
+    expect(db.getDispatchContext(taskId)?.id).toBe(dispatchId)
   })
 })

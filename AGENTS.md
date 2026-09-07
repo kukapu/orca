@@ -1,3 +1,9 @@
+# Working With Orca
+
+For project orchestration, environments, model recovery, and delivery, start with
+[`docs/uso/README.md`](./docs/uso/README.md). These Spanish operating guides complement
+the version-matched skills and CLI help; they do not replace execution-safety rules below.
+
 # Design System
 
 All UI work — layout, color, typography, spacing, component selection, UX behavior — must follow [`docs/STYLEGUIDE.md`](./docs/STYLEGUIDE.md). Use the tokens defined in `src/renderer/src/assets/main.css` (the canonical source) and the shadcn primitives in `src/renderer/src/components/ui/`. Don't invent new color values, font sizes, or shadow tiers when a documented one already covers the role. When STYLEGUIDE.md is silent, follow the resolution order in its final section.

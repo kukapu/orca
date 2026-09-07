@@ -37,7 +37,9 @@ import type {
   ServerAgentStatusListener,
   ServerStatusLineListener,
   StatusChangeListener,
-  StatusDropListener
+  StatusDropListener,
+  AgentHookObservedOptionsRow,
+  AnnouncedProviderSession
 } from './server-types'
 
 /** Shared mutable state for the layered hook-server implementation. */
@@ -101,6 +103,23 @@ export abstract class AgentHookServerState {
   // (absence, not completion), but the *age* of the evidence a later replay restates is not a
   // claim about the pane and must not be lost with it. Bounded like its sibling maps.
   protected evidenceObservedAtByPaneKey = new Map<string, number>()
+  // Why: the last-status row is replaced by option-less lifecycle events (Idle,
+  // tool posts), so the newest observed launch options for a pane survive here
+  // for exact-worker reads. Bounded like its sibling maps.
+  protected lastObservedOptionsByPaneKey = new Map<string, AgentHookObservedOptionsRow>()
+  // Why: session a boundary last proved live for the pane (OpenCode SessionStart,
+  // Pi session_start, OpenCode user-turn message — the real resume signal,
+  // since a resume never re-emits SessionStart). Turn content never moves it,
+  // which is what distinguishes a superseded session's late straggler from a
+  // live session. Bounded like its sibling maps; survives transport clears
+  // like the evidence clock, cleared with the pane in clearPaneState.
+  protected announcedProviderSessionByPaneKey = new Map<string, AnnouncedProviderSession>()
+  // Why: pull-query into the runtime's live PTY registry — the execution host's
+  // own record of which launch generation is current for a pane. Only a string
+  // (token hash) is generation proof; null = tokenless pane, undefined = unknown.
+  // Never cached server-side: read-through so the registry stays the single source.
+  protected liveLaunchTokenHashProvider: ((paneKey: string) => string | null | undefined) | null =
+    null
   // Why: skip disk writes when the JSON exactly matches the last write; guards against re-firing trailing timers when nothing changed.
   protected lastWrittenJson: string | null = null
   // Why: main is the pane authority for local/WSL/SSH panes — hook HTTP, relay, and its own

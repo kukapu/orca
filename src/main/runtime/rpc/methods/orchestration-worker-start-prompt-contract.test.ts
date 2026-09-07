@@ -257,6 +257,26 @@ describe('orchestration worker-start prompt contract', () => {
     expect(harness.startedTurns()).toBe(0)
     expect(harness.prematureSubmits()).toBe(0)
     expect(harness.writes.filter((data) => data === '\r')).toHaveLength(1)
+
+    const replay = await harness.dispatcher.dispatch(harness.request)
+    expect(replay).toMatchObject({
+      ok: true,
+      result: { dispatchId, mutation: { replayed: true } }
+    })
+    const retry = await harness.dispatcher.dispatch({
+      ...harness.request,
+      id: 'rpc_stalled_retry',
+      orchestrationRequestId: 'stalled_replacement',
+      params: { ...(harness.request.params as Record<string, unknown>), retryOf: dispatchId }
+    })
+    expect(retry).toMatchObject({
+      ok: false,
+      error: {
+        code: 'task_not_startable',
+        data: { taskId: harness.taskId, retryOf: dispatchId }
+      }
+    })
+    expect(harness.submittedTurns()).toBe(1)
     const persisted = reopenPromptContractDb(harness)
     expect(persisted.getTask(harness.taskId)?.status).toBe('failed')
     // Why (#16095): the receipt still reports the failure, but Enter was written before it was
@@ -271,6 +291,15 @@ describe('orchestration worker-start prompt contract', () => {
       stage: 'dispatch_input',
       last_error: 'agent_prompt_stalled'
     })
+    expect(() =>
+      persisted.createStartingWorkerDispatch({
+        creator: { kind: 'system' },
+        maxDepth: Number.MAX_SAFE_INTEGER,
+        taskId: harness.taskId,
+        retryOf: dispatchId,
+        startOptions: {}
+      })
+    ).toThrow('agent_prompt_stalled')
     const callerFingerprint = persisted.getOrCreateLocalMutationCallerFingerprint()
     const receipt = persisted.getMutationReceipt(callerFingerprint, harness.requestId)
     expect(receipt).toMatchObject({ state: 'completed' })

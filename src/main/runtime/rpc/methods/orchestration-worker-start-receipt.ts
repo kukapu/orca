@@ -1,5 +1,8 @@
 import type { OrchestrationDb } from '../../orchestration/db'
-import { isAgentPromptStalledError } from '../../agent-prompt-submission-verification'
+import {
+  AGENT_PROMPT_STALLED_ERROR,
+  isAgentPromptStalledError
+} from '../../agent-prompt-submission-verification'
 import {
   isUnknownWorkerStartOutcome,
   type WorkerSetupReceipt
@@ -24,7 +27,11 @@ export function failWorkerStartWithReceipt(args: {
   const reason =
     (agentSessionRefusal &&
       structuredChatPtyWriteRefusalCopy(agentSessionRefusal, 'worker-start')) ??
-    (args.error instanceof Error ? args.error.message : String(args.error))
+    (isAgentPromptStalledError(args.error)
+      ? AGENT_PROMPT_STALLED_ERROR
+      : args.error instanceof Error
+        ? args.error.message
+        : String(args.error))
   const unknown = isUnknownWorkerStartOutcome(args.error, args.failedStage)
   const worker = unknown
     ? args.db.markWorkerStartUnknown(args.dispatchId, args.failedStage, reason)

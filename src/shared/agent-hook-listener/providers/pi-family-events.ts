@@ -63,6 +63,10 @@ export function normalizePiCompatibleEvent(
       resetOnNewTurn: isNewTurnEvent(agentType, eventName)
     }),
     agentType,
+    // Why: the Pi extension reads ctx.model/ctx.thinkingLevel per event — runtime
+    // evidence of what the session runs, never a launch-selection echo.
+    model: readString(hookPayload, 'model'),
+    thinkingLevel: readString(hookPayload, 'thinking_level'),
     toolName: snapshot.toolName,
     toolInput: snapshot.toolInput,
     interactivePrompt: snapshot.interactivePrompt,

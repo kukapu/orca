@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  describeTerminalExitCause,
+  OPERATOR_CLOSE_EXIT_CAUSE
+} from '../../../../shared/terminal-exit-cause'
 import { OrcaRuntimeService } from '../../orca-runtime'
 import { OrchestrationDb } from '../../orchestration/db'
 import { ORCHESTRATION_METHODS } from './orchestration'
@@ -245,5 +249,64 @@ describe('worker-stop against a terminal we lost contact with', () => {
       lastError: string
     }
     expect(stopped.lastError).toBe('The recorded worker process is exited; no terminal was closed.')
+  })
+
+  // Incidencia real ctx_bb321c63284a: onPtyExit corrio failDispatch(workerProcessExited)
+  // con causa operator_close antes de que closeTerminal resolviera, dejo el worker en
+  // failed/process_exited y settleWorkerStop respondio "is not stopping" para un cierre
+  // que si ocurrio. El mock reproduce la transicion DB real del exit-handler antes de
+  // resolver el close confirmado.
+  it('settles stopped when the pty-exit handler records the operator close first', async () => {
+    const dispatch = createWorker()
+    vi.spyOn(runtime, 'showTerminal').mockResolvedValue({
+      handle: 'term_worker',
+      worktreeId: 'repo::worktree',
+      connected: true,
+      status: 'running'
+    } as never)
+    vi.spyOn(runtime, 'closeTerminal').mockImplementation(async () => {
+      db.failDispatch(dispatch.id, describeTerminalExitCause(OPERATOR_CLOSE_EXIT_CAUSE), {
+        workerProcessExited: true,
+        terminationReason: 'operator_close'
+      })
+      return { handle: 'term_worker', tabId: 'tab_worker', ptyKilled: true } as never
+    })
+
+    const stopped = (await call('orchestration.workerStop', { dispatch: dispatch.id })) as {
+      state: string
+      alreadySettled: boolean
+      processAction: string
+    }
+
+    expect(stopped).toMatchObject({
+      state: 'stopped',
+      alreadySettled: false,
+      processAction: 'closed_agent_terminal'
+    })
+    expect(db.getWorkerDispatch(dispatch.id)).toMatchObject({
+      state: 'stopped',
+      stage: 'process_stopped'
+    })
+    expect(db.getDispatchContextById(dispatch.id)).toMatchObject({
+      status: 'failed',
+      termination_reason: 'operator_close'
+    })
+    expect(db.getTask(dispatch.task_id)?.status).toBe('blocked')
+  })
+
+  it('does not adopt an exit record that does not prove a deliberate close', () => {
+    const dispatch = createWorker()
+    db.beginWorkerStop(dispatch.id, runtime.getRuntimeId())
+    db.failDispatch(dispatch.id, 'Agent process killed by signal 9', {
+      workerProcessExited: true,
+      terminationReason: 'signaled'
+    })
+    expect(db.getWorkerDispatch(dispatch.id)).toMatchObject({
+      state: 'failed',
+      stage: 'process_exited'
+    })
+
+    expect(() => db.settleWorkerStop(dispatch.id)).toThrow('is not stopping')
+    expect(db.getWorkerDispatch(dispatch.id)?.state).toBe('failed')
   })
 })

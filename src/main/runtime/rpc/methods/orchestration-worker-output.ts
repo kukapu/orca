@@ -47,7 +47,8 @@ export async function readExactWorkerOutput(args: {
     sessionId: session.providerSession.id,
     transcriptPath: session.providerSession.transcriptPath,
     offset: cursor?.source === 'transcript' ? cursor.position : undefined,
-    limit: args.limit
+    limit: args.limit,
+    connectionId: session.connectionId
   })
   if (!transcript.ok) {
     if (transcript.reason === 'source_changed') {
@@ -64,7 +65,10 @@ export async function readExactWorkerOutput(args: {
     session.agent,
     session.providerSession.key,
     session.providerSession.id,
-    transcript.filePath
+    transcript.filePath,
+    // Snapshot digest: any content mutation (append/edit/delete/reorder) between cursor reads
+    // invalidates the identity as source_changed instead of paging a shifted snapshot silently.
+    ...(transcript.sourceDigest ? [`digest:${transcript.sourceDigest}`] : [])
   ])
   if (cursor?.source === 'transcript' && cursor.sourceIdentity !== sourceIdentity) {
     throw sourceChanged()

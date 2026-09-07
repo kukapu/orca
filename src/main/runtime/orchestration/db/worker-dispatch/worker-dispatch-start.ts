@@ -7,6 +7,7 @@ import type { OrchestrationDb } from '../orchestration-db'
 import { insertStartingDispatchContextRow } from '../dispatch-row-writer'
 import type { DispatchCreator } from '../dispatch-depth'
 import { taskNotFoundError, taskNotStartableError } from '../../task-dispatch-refusal'
+import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-verification'
 
 export function createStartingWorkerDispatch(
   this: OrchestrationDb,
@@ -63,14 +64,12 @@ export function createStartingWorkerDispatch(
     if (!task) {
       throw taskNotFoundError(`Task ${params.taskId} was not found.`, { taskId: params.taskId })
     }
+    const prior = this.getDispatchContext(task.id)
+    const priorWorker = prior ? this.getWorkerDispatch(prior.id) : undefined
     if (params.retryOf) {
-      const prior = this.getDispatchContextById(params.retryOf)
-      const priorWorker = this.getWorkerDispatch(params.retryOf)
-      const latest = this.getDispatchContext(task.id)
       if (
         !prior ||
-        prior.task_id !== task.id ||
-        latest?.id !== prior.id ||
+        prior.id !== params.retryOf ||
         !priorWorker ||
         !['failed', 'stopped', 'abandoned'].includes(priorWorker.state) ||
         !['failed', 'blocked'].includes(task.status)
@@ -87,6 +86,22 @@ export function createStartingWorkerDispatch(
         this,
         `Task ${task.id} is ${task.status}; only a ready Task can start.`,
         task
+      )
+    }
+
+    // A failed delivery observation can still own work, even after capability revocation.
+    if (
+      prior &&
+      priorWorker?.state === 'failed' &&
+      priorWorker.stage !== 'settled' &&
+      (prior.last_failure === AGENT_PROMPT_STALLED_ERROR ||
+        priorWorker.last_error === AGENT_PROMPT_STALLED_ERROR)
+    ) {
+      throw taskNotStartableError(
+        this,
+        `Task ${task.id} cannot start another worker after Dispatch ${prior.id}: agent_prompt_stalled does not prove execution stopped. Inspect worker-show/worker-read and wait for the worker's result. Before explicitly abandoning and retrying, ensure prior work cannot conflict; worker-abandon does not stop the process.`,
+        task,
+        prior.id
       )
     }
 

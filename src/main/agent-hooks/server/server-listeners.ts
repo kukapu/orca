@@ -7,6 +7,7 @@ import type { HookTransportInterferenceReport } from '../../../shared/agent-hook
 import type { HookListenerState } from '../../../shared/agent-hook-listener/listener-state'
 import type {
   AgentHookAuthorityEvidence,
+  AgentHookObservedOptionsRow,
   AgentHookProviderSessionIdentity,
   AgentHookStatusChangeEntry,
   EnrichedAgentHookEventPayload,
@@ -140,6 +141,12 @@ export abstract class AgentHookServerListeners extends AgentHookServerState {
   /** Provider-session identities, including Pi's metadata-only rows. */
   getProviderSessionIdentities(): AgentHookProviderSessionIdentity[] {
     return this.buildStatusChangeNotification().providerSessions
+  }
+
+  /** Newest observed launch-option evidence per pane. Used by exact-worker reads
+   *  (worker-show) that must not lose evidence to option-less lifecycle rows. */
+  getObservedOptionsSnapshot(): AgentHookObservedOptionsRow[] {
+    return Array.from(this.lastObservedOptionsByPaneKey.values(), (row) => ({ ...row }))
   }
 
   getStatusSnapshotForPane(paneKey: string): AgentStatusIpcPayload[] {

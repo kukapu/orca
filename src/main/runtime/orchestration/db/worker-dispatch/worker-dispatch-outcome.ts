@@ -1,5 +1,6 @@
 import type { WorkerDispatchRow } from '../../types'
 import { OrchestrationError } from '../../orchestration-error'
+import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-verification'
 import type { OrchestrationDb } from '../orchestration-db'
 
 export function markWorkerDispatchReady(
@@ -75,7 +76,9 @@ export function failWorkerStart(
          )`
       )
       .run(dispatch.task_id)
-    this.closeQuestionsForDispatch(dispatchId)
+    if (!(options.retainCapability && reason === AGENT_PROMPT_STALLED_ERROR)) {
+      this.closeQuestionsForDispatch(dispatchId)
+    }
     this.db.exec('COMMIT')
     return this.getWorkerDispatch(dispatchId) as WorkerDispatchRow
   } catch (error) {

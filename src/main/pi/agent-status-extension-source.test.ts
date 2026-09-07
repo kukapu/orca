@@ -84,6 +84,67 @@ describe('getPiAgentStatusExtensionSource', () => {
     })
   })
 
+  it('posts the runtime-observed model and thinking level on turn events', async () => {
+    const harness = createHarness({ kind: 'pi' })
+    const runtimeCtx = {
+      model: { id: 'glm-5.3', provider: 'zai' },
+      thinkingLevel: 'xhigh'
+    }
+
+    await harness.callHook('before_agent_start', { prompt: 'fix the parser' }, runtimeCtx)
+
+    await vi.waitFor(() => expect(harness.fetchMock).toHaveBeenCalledTimes(1))
+    const body = JSON.parse(String(harness.fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body.payload).toMatchObject({
+      hook_event_name: 'before_agent_start',
+      model: 'zai/glm-5.3',
+      thinking_level: 'xhigh'
+    })
+
+    await harness.callHook('tool_call', { toolName: 'edit', input: {} }, runtimeCtx)
+    await vi.waitFor(() => expect(harness.fetchMock).toHaveBeenCalledTimes(2))
+    const toolBody = JSON.parse(String(harness.fetchMock.mock.calls[1]?.[1]?.body))
+    expect(toolBody.payload).toMatchObject({
+      hook_event_name: 'tool_call',
+      model: 'zai/glm-5.3',
+      thinking_level: 'xhigh'
+    })
+  })
+
+  it('re-captures the observed model when the runtime switches mid-session', async () => {
+    const harness = createHarness({ kind: 'pi' })
+
+    await harness.callHook(
+      'before_agent_start',
+      { prompt: 'first turn' },
+      { model: { id: 'glm-5.3', provider: 'zai' }, thinkingLevel: 'high' }
+    )
+    await harness.callHook(
+      'before_agent_start',
+      { prompt: 'second turn' },
+      { model: { id: 'grok-4.6', provider: 'xai' }, thinkingLevel: 'low' }
+    )
+
+    await vi.waitFor(() => expect(harness.fetchMock).toHaveBeenCalledTimes(2))
+    const second = JSON.parse(String(harness.fetchMock.mock.calls[1]?.[1]?.body))
+    expect(second.payload).toMatchObject({
+      hook_event_name: 'before_agent_start',
+      model: 'xai/grok-4.6',
+      thinking_level: 'low'
+    })
+  })
+
+  it('omits model/thinking fields when the runtime context exposes neither', async () => {
+    const harness = createHarness({ kind: 'pi' })
+
+    await harness.callHook('before_agent_start', { prompt: 'fork without ctx.model' }, {})
+
+    await vi.waitFor(() => expect(harness.fetchMock).toHaveBeenCalledTimes(1))
+    const body = JSON.parse(String(harness.fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body.payload).not.toHaveProperty('model')
+    expect(body.payload).not.toHaveProperty('thinking_level')
+  })
+
   it('waits until Pi creates its planned session file before advertising resume identity', async () => {
     let sessionFileExists = false
     const harness = createHarness({

@@ -1,6 +1,11 @@
 import type { FederatedDispatchRow } from '../../types'
 import { OrchestrationError } from '../../orchestration-error'
+import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-verification'
 import type { OrchestrationDb } from '../orchestration-db'
+
+// Why: a worker whose prompt delivery was never observed may still report, so its relay
+// stays eligible until its own report settles the record (stage 'settled' marks that).
+const UNSETTLED_UNOBSERVED_PROMPT_WORKER_SQL = `wd.state = 'failed' AND wd.stage != 'settled' AND wd.last_error = ?`
 
 export function getFederatedDispatch(
   this: OrchestrationDb,
@@ -21,11 +26,12 @@ export function listActiveFederatedDispatches(
        FROM federated_dispatches fd
        INNER JOIN dispatch_contexts dc ON dc.id = fd.dispatch_id
        INNER JOIN worker_dispatches wd ON wd.dispatch_id = fd.dispatch_id
-       WHERE wd.state IN ('starting', 'ready', 'stopping', 'start_unknown', 'stop_unknown')
+       WHERE (wd.state IN ('starting', 'ready', 'stopping', 'start_unknown', 'stop_unknown')
+              OR ${UNSETTLED_UNOBSERVED_PROMPT_WORKER_SQL})
          AND (? IS NULL OR dc.run_id = ?)
        ORDER BY fd.rowid`
     )
-    .all(runId ?? null, runId ?? null) as FederatedDispatchRow[]
+    .all(AGENT_PROMPT_STALLED_ERROR, runId ?? null, runId ?? null) as FederatedDispatchRow[]
 }
 
 export function findNextTerminalFederatedDispatchPendingAcknowledgment(
@@ -55,16 +61,18 @@ export function isFederatedDispatchRelayEligible(
       .prepare(
         `SELECT 1
          FROM federated_dispatches fd
+         INNER JOIN dispatch_contexts dc ON dc.id = fd.dispatch_id
          INNER JOIN worker_dispatches wd ON wd.dispatch_id = fd.dispatch_id
          WHERE fd.dispatch_id = ?
            AND (
              wd.state IN ('starting', 'ready', 'stopping', 'start_unknown', 'stop_unknown')
+             OR ${UNSETTLED_UNOBSERVED_PROMPT_WORKER_SQL}
              OR (
                fd.to_home_acknowledged_sequence < fd.to_home_imported_sequence
              )
            )`
       )
-      .get(dispatchId)
+      .get(dispatchId, AGENT_PROMPT_STALLED_ERROR)
   )
 }
 

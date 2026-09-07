@@ -89,21 +89,28 @@ export async function waitForWorktreeStartupFollowup(
 export function waitForWorktreeStartupDraft(
   host: WorktreeStartupReadinessHost,
   handle: string,
-  agent: TuiAgent
+  agent: TuiAgent,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {}
 ): Promise<string | null> {
   const ptyId = host.getPtyId(handle)
   if (!ptyId) {
     return Promise.resolve(null)
   }
+  if (options.timeoutMs !== undefined && options.timeoutMs <= 0) {
+    return Promise.resolve(null)
+  }
+  if (options.signal?.aborted) {
+    return Promise.reject(new Error('request_aborted'))
+  }
   const signal =
     TUI_AGENT_CONFIG[agent].draftPasteReadySignal ?? 'render-quiet-after-bracketed-paste'
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let settled = false
     const scanner = createDraftPasteReadyScanner(signal)
     let quietTimer: NodeJS.Timeout | null = null
     let hardTimer: NodeJS.Timeout | null = null
     let unsubscribe: (() => void) | null = null
-    const finish = (value: string | null): void => {
+    const finish = (value: string | null, error?: Error): void => {
       if (settled) {
         return
       }
@@ -115,7 +122,15 @@ export function waitForWorktreeStartupDraft(
         clearTimeout(hardTimer)
       }
       unsubscribe?.()
+      options.signal?.removeEventListener('abort', onAbort)
+      if (error) {
+        reject(error)
+        return
+      }
       resolve(value)
+    }
+    const onAbort = (): void => {
+      finish(null, new Error('request_aborted'))
     }
     const observe = (data: string): void => {
       const result = scanner.observe(data)
@@ -129,11 +144,22 @@ export function waitForWorktreeStartupDraft(
         quietTimer = setTimeout(() => finish(ptyId), BRACKETED_PASTE_QUIET_MS)
       }
     }
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    if (options.signal?.aborted) {
+      onAbort()
+      return
+    }
     unsubscribe = host.subscribeToData(ptyId, observe)
     const replay = host.readRecentOutput(ptyId)
     if (replay) {
       observe(replay)
     }
-    hardTimer = setTimeout(() => finish(null), resolveDraftPasteReadyTimeoutMs(agent))
+    if (settled) {
+      return
+    }
+    hardTimer = setTimeout(
+      () => finish(null),
+      resolveDraftPasteReadyTimeoutMs(agent, options.timeoutMs)
+    )
   })
 }

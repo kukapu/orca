@@ -60,7 +60,8 @@ export async function captureWorkerOutputArchive(args: {
       agent: session.agent,
       sessionId: session.providerSession.id,
       transcriptPath: session.providerSession.transcriptPath,
-      limit: MAX_WORKER_TRANSCRIPT_MESSAGE_LIMIT
+      limit: MAX_WORKER_TRANSCRIPT_MESSAGE_LIMIT,
+      connectionId: session.connectionId
     }).catch(() => null)
     if (snapshot?.ok && snapshot.messages.length > 0) {
       return {

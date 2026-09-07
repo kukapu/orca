@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { RemoteDispatchAttachmentRow } from '../../types'
 import { OrchestrationError } from '../../orchestration-error'
+import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-verification'
 import { hashDispatchCapability } from '../dispatch-capability-hash'
 import { isEquivalentPaneKey } from '../pane-key-match'
 import type { OrchestrationDb } from '../orchestration-db'
@@ -90,17 +91,22 @@ export function failRemoteAttachment(
   dispatchId: string,
   stage: string,
   reason: string,
-  unknown: boolean
+  unknown: boolean,
+  // Why (#16095, federated twin of failWorkerStart's retainCapability): the prompt bytes
+  // were written before verification, so an unobserved prompt may still be executing —
+  // its worker keeps the authority its own late report needs.
+  options: { retainCapability?: boolean } = {}
 ): RemoteDispatchAttachmentRow {
   const state = unknown ? 'start_unknown' : 'failed'
   const result = this.db
     .prepare(
       `UPDATE remote_dispatch_attachments
-       SET state = ?, stage = ?, last_error = ?, capability_hash = NULL,
+       SET state = ?, stage = ?, last_error = ?,
+           capability_hash = CASE WHEN ? = 1 THEN capability_hash ELSE NULL END,
            updated_at = datetime('now')
        WHERE dispatch_id = ? AND state = 'starting'`
     )
-    .run(state, stage, reason, dispatchId)
+    .run(state, stage, reason, options.retainCapability ? 1 : 0, dispatchId)
   if (result.changes !== 1) {
     throw new OrchestrationError(
       'dispatch_inactive',
@@ -108,6 +114,33 @@ export function failRemoteAttachment(
     )
   }
   return this.getRemoteDispatchAttachment(dispatchId) as RemoteDispatchAttachmentRow
+}
+
+/** Stages that mark an attachment settled by its own worker's report. */
+export const REPORT_SETTLED_ATTACHMENT_STAGES = ['worker_report_queued', 'worker_report_settled']
+
+/**
+ * A `failed` attachment whose prompt bytes were written but whose effect was never observed:
+ * the delivery could still have executed. `requireRetainedCapability` selects the stricter
+ * reading for authority paths (late-report routing, relay settlement) — hosts predating the
+ * retention change persisted these rows with the hash already cleared, and they still own a
+ * possibly-live process, so stop eligibility must not depend on the hash.
+ */
+export function isUnobservedPromptAttachment(
+  attachment: {
+    state: string
+    stage: string
+    last_error: string | null
+    capability_hash: string | null
+  },
+  options: { requireRetainedCapability: boolean }
+): boolean {
+  return (
+    attachment.state === 'failed' &&
+    attachment.last_error === AGENT_PROMPT_STALLED_ERROR &&
+    !REPORT_SETTLED_ATTACHMENT_STAGES.includes(attachment.stage) &&
+    (!options.requireRetainedCapability || attachment.capability_hash !== null)
+  )
 }
 
 export function verifyRemoteAttachmentAuthority(
@@ -158,6 +191,7 @@ export type RemoteDispatchAttachmentAuthorityMethods = {
   prepareRemoteAttachmentAuthority: typeof prepareRemoteAttachmentAuthority
   markRemoteAttachmentReady: typeof markRemoteAttachmentReady
   failRemoteAttachment: typeof failRemoteAttachment
+  isUnobservedPromptAttachment: typeof isUnobservedPromptAttachment
   verifyRemoteAttachmentAuthority: typeof verifyRemoteAttachmentAuthority
   isRemoteAttachmentProcessCurrent: typeof isRemoteAttachmentProcessCurrent
 }
@@ -167,6 +201,7 @@ export function attachRemoteDispatchAttachmentAuthority(ctor: { prototype: objec
     prepareRemoteAttachmentAuthority,
     markRemoteAttachmentReady,
     failRemoteAttachment,
+    isUnobservedPromptAttachment,
     verifyRemoteAttachmentAuthority,
     isRemoteAttachmentProcessCurrent
   })

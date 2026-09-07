@@ -18,7 +18,12 @@ export function getE2ECompletedOnboardingProfile() {
         optedIn: true,
         installId: '00000000-0000-4000-8000-000000000000',
         existedBeforeTelemetryRelease: false
-      }
+      },
+      // Why: the host OS locale drives the default 'system' UI language, so specs
+      // asserting English accessible names go red on non-English machines. Pin
+      // English here (paired web clients mirror host settings via settings.get);
+      // specs that test a language set their own uiLanguage explicitly.
+      uiLanguage: 'en'
     },
     onboarding: {
       flowVersion: ONBOARDING_FLOW_VERSION,

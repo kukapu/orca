@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 
 import type { AgentKind } from '../../../shared/telemetry-events'
 import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/listener-event'
+import type { AgentHookSource } from '../../../shared/agent-hook-relay'
 import {
   getAgentResumeArgv,
   type AgentProviderSessionMetadata
@@ -11,6 +12,55 @@ import type { AgentStatusIpcPayload, AgentType } from '../../../shared/agent-sta
 import type { EnrichedAgentHookEventPayload } from './server-types'
 import { AGENT_PROMPT_SENT_AGENT_KINDS, TOOL_PROGRESS_HOOK_EVENTS } from './server-constants'
 import { MAX_PANE_KEY_LEN } from '../../../shared/agent-hook-listener/listener-limits'
+
+/** Sources whose observed options are session-fenced: each can both announce its
+ *  session and be announced away. mimo-code/omp events are dropped before ever
+ *  announcing, so fencing them would have no lift path. */
+const OBSERVED_OPTIONS_SESSION_FENCE_SOURCES: ReadonlySet<AgentHookSource> = new Set([
+  'opencode',
+  'pi',
+  'prime-agent'
+])
+
+export function isFenceScopedSource(source: AgentHookSource | undefined): boolean {
+  return source !== undefined && OBSERVED_OPTIONS_SESSION_FENCE_SOURCES.has(source)
+}
+
+export function isObservedOptionsSessionFenceScoped(
+  payload: AgentHookEventPayload | EnrichedAgentHookEventPayload
+): boolean {
+  return isFenceScopedSource(payload.source)
+}
+
+/** Fields the session-boundary predicates read; live hook payloads and the
+ *  disposition's event view are both structural supersets of this shape. */
+export type ProviderSessionBoundaryView = {
+  source?: AgentHookSource
+  hookEventName?: string
+  providerSessionOnly?: boolean
+  hasExplicitPrompt?: boolean
+}
+
+/** A session announcement, not turn content: OpenCode's SessionStart row and Pi's
+ *  identity-only session_start. Only session.created emits SessionStart — a
+ *  resume never re-emits it — so announcements alone cannot track resumes;
+ *  see isProviderSessionUserTurn for the resume signal. */
+export function isProviderSessionAnnouncement(payload: ProviderSessionBoundaryView): boolean {
+  return payload.hookEventName === 'SessionStart' || payload.providerSessionOnly === true
+}
+
+/** OpenCode's real resume signal: it emits no UserPromptSubmit and a resumed
+ *  session never re-emits SessionStart, so the role=user MessagePart (admitted
+ *  by the normalizer as the new turn — same predicate the retired-pane revive
+ *  reuses) is what proves the session live again. Pi resumes re-emit
+ *  session_start instead, so turn content alone never moves Pi authority. */
+export function isProviderSessionUserTurn(payload: ProviderSessionBoundaryView): boolean {
+  return (
+    payload.source === 'opencode' &&
+    payload.hookEventName === 'MessagePart' &&
+    payload.hasExplicitPrompt === true
+  )
+}
 
 export function agentTypeToPromptSentAgentKind(agentType: AgentType | undefined): AgentKind {
   const normalized = agentType?.trim().toLowerCase()
@@ -59,6 +109,11 @@ export function toAgentStatusIpcPayload(
     worktreeId: entry.worktreeId,
     connectionId: entry.connectionId,
     receivedAt: entry.receivedAt,
+    // Why: consumers must measure staleness with the evidence clock, not the
+    // restamped delivery clock — a replayed row would otherwise read as fresh.
+    ...(entry.evidenceObservedAt !== undefined
+      ? { evidenceObservedAt: entry.evidenceObservedAt }
+      : {}),
     stateStartedAt: entry.stateStartedAt,
     ...(entry.providerSession ? { providerSession: entry.providerSession } : {}),
     ...(entry.providerSessionOnly ? { providerSessionOnly: true } : {}),

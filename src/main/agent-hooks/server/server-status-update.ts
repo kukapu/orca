@@ -7,7 +7,7 @@ import {
   shouldSuppressInheritedTerminalStatus
 } from '../../../shared/agent-status-identity'
 import { INTERRUPTED_DONE_LATE_WORKING_SUPPRESSION_MS } from './server-constants'
-import type { EnrichedAgentHookEventPayload } from './server-types'
+import type { AgentHookObservedOptionsRow, EnrichedAgentHookEventPayload } from './server-types'
 import type { AgentHookEventPayload } from '../../../shared/agent-hook-listener/listener-event'
 import type { AgentStatusObservationOrigin } from '../../../shared/agent-status-observation'
 import {
@@ -17,7 +17,10 @@ import {
   shouldKeepClaudePermissionVisible
 } from './server-claude-status-rules'
 import { isToolProgressWorkingAfterInterrupt } from './server-status-identity'
-import { AgentHookServerStatusApplication } from './server-status-application'
+import {
+  AgentHookServerStatusApplication,
+  MAX_REMEMBERED_OBSERVED_OPTIONS
+} from './server-status-application'
 
 export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusApplication {
   protected applyNormalizedStatus(
@@ -48,12 +51,23 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
     if (payload.providerSessionOnly) {
       // Why: identity-only rows survive replay but must not emit prompt telemetry or a fabricated status.
       onAccepted?.()
+      this.recordSessionAuthorityOnAccept(payload)
+      // Why: same fence and same ordering as the main branch — after the
+      // authority recording so a legit next-session announcement never fences
+      // itself, a superseded or foreign-generation session_start cannot
+      // replace the live row.
+      if (previous !== undefined && this.isSupersededProviderSession(payload)) {
+        return previous
+      }
       const enriched = {
         ...this.attachStatusTiming(payload, now),
         observation: this.stampObservation(payload, origin, now)
       }
       this.clearAssistantMessageRetry(enriched.paneKey)
       this.runtimeObservedStatusPaneKeys.delete(enriched.paneKey)
+      // Why: a Pi session_start is this pane's next-session announcement; it must
+      // fence the previous session's observed options even though it carries none.
+      this.rememberObservedOptions(enriched)
       this.state.lastStatusByPaneKey.set(enriched.paneKey, enriched)
       this.scheduleStatusPersist()
       this.notifyStatusChangeListeners()
@@ -174,13 +188,42 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
     ) {
       this.clearAssistantMessageRetry(effectivePayload.paneKey)
     }
+    // Why: authority moves only on acceptance — replays, rejected rows and
+    // other generations must not move it — and before the fence below so an
+    // announcement or user-turn never fences itself.
+    this.recordSessionAuthorityOnAccept(boundaryAwarePayload)
+    // Why: a superseded session must not land at all — live straggler or
+    // reconnect replay. Projecting the live session onto its content would
+    // label A's prompt/model as B's, and letting a replay replace the row
+    // would flip the pane's snapshot back to a dead generation. The live
+    // session's own replays are never superseded, so rehydration is intact;
+    // without a previous row the first row still lands with options fenced.
+    if (previous !== undefined && this.isSupersededProviderSession(boundaryAwarePayload)) {
+      return previous
+    }
     onAccepted?.()
     if (!identity.inheritedFromActivePane) {
       this.maybeTrackAgentPromptSent(effectivePayload, previous)
     }
+    // Why: the selector also reads status rows — strip a superseded session's
+    // options there too, or the side-table fence leaves that leak open.
+    const optionsFencedPayload = this.isSupersededProviderSession(boundaryAwarePayload)
+      ? {
+          ...boundaryAwarePayload,
+          payload: {
+            ...boundaryAwarePayload.payload,
+            model: undefined,
+            thinkingLevel: undefined,
+            variant: undefined
+          }
+        }
+      : boundaryAwarePayload
+    // Why: a superseded row that still lands (no previous row to preserve)
+    // keeps its own session identity — never relabeled as the authority's —
+    // so workerRead cannot read A's content as B's session.
     const enriched = {
-      ...this.attachStatusTiming(boundaryAwarePayload, now),
-      observation: this.stampObservation(boundaryAwarePayload, origin, now)
+      ...this.attachStatusTiming(optionsFencedPayload, now),
+      observation: this.stampObservation(optionsFencedPayload, origin, now)
     }
     if (
       typeof enriched.payload.turnCompletedAt === 'number' &&
@@ -197,6 +240,7 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
     } else {
       this.runtimeObservedStatusPaneKeys.add(enriched.paneKey)
     }
+    this.rememberObservedOptions(enriched)
     this.state.lastStatusByPaneKey.set(enriched.paneKey, enriched)
     this.scheduleStatusPersist()
     this.notifyStatusChangeListeners()
@@ -214,6 +258,63 @@ export abstract class AgentHookServerStatusUpdate extends AgentHookServerStatusA
       } catch (err) {
         console.error('[agent-hooks] enriched status listener threw', err)
       }
+    }
+  }
+
+  /** Keep the newest options-carrying evidence per pane; only accepted events
+   *  reach here, and suppressed events must not overwrite it. */
+  protected rememberObservedOptions(enriched: EnrichedAgentHookEventPayload): void {
+    // Why: a superseded session's late event must neither re-store its options
+    // nor delete the live session's stored row (the fence runs before the check).
+    if (this.isSupersededProviderSession(enriched)) {
+      return
+    }
+    this.fenceObservedOptionsOnProviderSessionChange(enriched)
+    const { model, thinkingLevel, variant, agentType } = enriched.payload
+    if (
+      agentType === undefined ||
+      (model === undefined && thinkingLevel === undefined && variant === undefined)
+    ) {
+      return
+    }
+    const row: AgentHookObservedOptionsRow = {
+      paneKey: enriched.paneKey,
+      connectionId: enriched.connectionId,
+      ...(enriched.launchToken ? { launchToken: enriched.launchToken } : {}),
+      ...(enriched.providerSession ? { providerSessionId: enriched.providerSession.id } : {}),
+      agentType,
+      ...(model !== undefined ? { model } : {}),
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      ...(variant !== undefined ? { variant } : {}),
+      origin: enriched.observation?.origin ?? 'hook',
+      evidenceObservedAt: enriched.evidenceObservedAt ?? enriched.receivedAt,
+      receivedAt: enriched.receivedAt,
+      ...(enriched.observation ? { observation: enriched.observation } : {})
+    }
+    this.lastObservedOptionsByPaneKey.delete(enriched.paneKey)
+    this.lastObservedOptionsByPaneKey.set(enriched.paneKey, row)
+    while (this.lastObservedOptionsByPaneKey.size > MAX_REMEMBERED_OBSERVED_OPTIONS) {
+      const oldest = this.lastObservedOptionsByPaneKey.keys().next().value
+      if (typeof oldest !== 'string') {
+        break
+      }
+      this.lastObservedOptionsByPaneKey.delete(oldest)
+    }
+  }
+
+  /** A provider-session change in one pane (OpenCode /new, Pi session_start)
+   *  ends the previous session's option evidence: option-less events of the SAME
+   *  session must survive, but the next session must start with none. */
+  private fenceObservedOptionsOnProviderSessionChange(
+    enriched: EnrichedAgentHookEventPayload
+  ): void {
+    const sessionId = enriched.providerSession?.id
+    if (!sessionId) {
+      return
+    }
+    const stored = this.lastObservedOptionsByPaneKey.get(enriched.paneKey)
+    if (stored?.providerSessionId && stored.providerSessionId !== sessionId) {
+      this.lastObservedOptionsByPaneKey.delete(enriched.paneKey)
     }
   }
 }

@@ -11,6 +11,10 @@ export type HookContext = {
     getSessionId?: () => unknown
     getSessionFile?: () => unknown
   }
+  /** Pi 0.85 ExtensionContext.model — runtime evidence of the session model. */
+  model?: { id?: unknown; provider?: unknown }
+  /** Pi 0.85 ExtensionContext.thinkingLevel — runtime evidence of the thinking level. */
+  thinkingLevel?: unknown
 }
 
 export type HookHandler = (event?: unknown, context?: HookContext) => Promise<void> | void

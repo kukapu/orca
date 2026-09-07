@@ -11,6 +11,7 @@ import {
   callFederatedWorkerShow,
   exposeWorker,
   inspectWorkerTerminal,
+  resolveLocalWorkerObservation,
   resolvePinnedFederatedServer,
   showContextOnlyWorker
 } from './orchestration-worker-observation'
@@ -111,6 +112,9 @@ export const ORCHESTRATION_WORKER_CONTROL_METHODS: RpcMethod[] = [
             ...remote.observation,
             // Legacy servers published `running`; normalize at the compatibility boundary.
             status: remote.observation.status === 'running' ? 'live' : remote.observation.status
+            // Why: observedOptions rides the spread — present only when the executing
+            // host evaluated it; a remote absence stays absent here rather than
+            // becoming a client-side fallback claim.
           }
         }
       }
@@ -137,16 +141,7 @@ export const ORCHESTRATION_WORKER_CONTROL_METHODS: RpcMethod[] = [
         dispatch,
         worker: exposeWorker(worker),
         terminal: observation.exact ? observation.terminal : null,
-        observation: {
-          status: observation.status,
-          exactWorker: observation.exact,
-          // Why: a bare `unverifiable` is not actionable without naming what we lost.
-          ...(observation.reason ? { reason: observation.reason } : {}),
-          // Why conditional: a present null must mean "looked, nothing waiting". An
-          // unattached, missing or identity-changed worker was never looked at, and saying
-          // null there is the false negative this field exists to remove.
-          ...(observation.agentWait !== undefined ? { agentWait: observation.agentWait } : {})
-        },
+        observation: resolveLocalWorkerObservation(runtime, worker, observation),
         terminalResource: resource ? exposeWorkerTerminalResource(resource) : null
       }
     }

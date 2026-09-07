@@ -6,6 +6,7 @@ import type { IPtyProvider } from '../providers/types'
 import type { RuntimeTerminalAgentStatusEvent } from './runtime-terminal-contracts'
 import type { TerminalSideEffectBatch } from '../../shared/terminal-side-effect-facts'
 import type { AgentStatusIpcPayload } from '../../shared/agent-status-types'
+import type { WorkerObservedOptionsCandidateRow } from './orchestration/worker-observed-options'
 import type { AgentHookAuthorityAttestation } from '../agent-hooks/server'
 import type {
   AiVaultPrepareSessionResumeArgs,
@@ -54,6 +55,11 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
        *  only carrier of the provider session a transcript is addressed by. */
       getAgentProviderSessionSnapshot?: () => AgentStatusIpcPayload[]
       getAgentProviderSessionRowsForPane?: (paneKey: string) => AgentStatusIpcPayload[]
+      /** Newest observed launch-option evidence per pane (model/thinking/variant).
+       *  Why a separate dep: the last-status row is replaced by option-less
+       *  lifecycle events, so exact-worker reads need the hook server's side
+       *  table rather than the mutable status row. */
+      getObservedOptionsSnapshot?: () => WorkerObservedOptionsCandidateRow[]
       attestAgentHookCompatibilityAuthority?: (candidate: {
         paneKey: string
         launchTokenHash: string
@@ -187,6 +193,7 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
     this.getAgentProviderSessionSnapshotFn =
       deps?.getAgentProviderSessionSnapshot ?? deps?.getAgentStatusSnapshot ?? null
     this.getAgentProviderSessionRowsForPaneFn = deps?.getAgentProviderSessionRowsForPane ?? null
+    this.getObservedOptionsSnapshotFn = deps?.getObservedOptionsSnapshot ?? null
     this.attestAgentHookCompatibilityAuthorityFn =
       deps?.attestAgentHookCompatibilityAuthority ?? null
     this.retireAgentHookCompatibilityAuthorityFn =

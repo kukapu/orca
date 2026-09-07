@@ -41,7 +41,8 @@ describe('exact worker provider session selection', () => {
       processIncarnation: 'pty:incarnation',
       agent: 'codex',
       providerSession: { key: 'session_id', id: 'exact' },
-      observedAt: 250
+      observedAt: 250,
+      connectionId: 'ssh-windows'
     })
   })
 

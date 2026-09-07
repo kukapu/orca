@@ -65,3 +65,21 @@ export function persistWorkerSetupWaitOutcome(
     residualResources: residualWorkerEffects(args.effects)
   })
 }
+
+export function assertWorkerTuiIdleSatisfied(
+  wait: { satisfied: boolean; blockedReason?: string; status: string },
+  setup: WorkerSetupReceipt,
+  onSetupWaitFailure: () => void
+): void {
+  if (wait.satisfied) {
+    return
+  }
+  if (setup.state === 'failed') {
+    onSetupWaitFailure()
+  }
+  throw new Error(
+    wait.blockedReason
+      ? `Agent startup blocked: ${wait.blockedReason}`
+      : `Agent did not become ready (${wait.status}).`
+  )
+}

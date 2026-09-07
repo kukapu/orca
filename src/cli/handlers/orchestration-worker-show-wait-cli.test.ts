@@ -71,4 +71,48 @@ describe('orchestration worker-show interactive wait output', () => {
 
     expect(line).toContain('Interactive wait: unknown (not evaluated)')
   })
+
+  it('prints observed model and thinking with origin and clock', async () => {
+    const line = await showWorker({
+      status: 'live',
+      exactWorker: true,
+      agentWait: null,
+      observedOptions: {
+        origin: 'hook',
+        status: 'observed',
+        agent: 'pi',
+        model: 'zai/glm-5.3',
+        thinkingLevel: 'xhigh',
+        observedAt: Date.UTC(2026, 8, 6, 11, 0, 0)
+      }
+    })
+
+    expect(line).toContain(
+      'Observed options: model=zai/glm-5.3 thinking=xhigh agent=pi (via hook at 2026-09-06T11:00:00.000Z)'
+    )
+  })
+
+  it('prints the explicit absence reason when the hook reports no options', async () => {
+    const line = await showWorker({
+      status: 'live',
+      exactWorker: true,
+      agentWait: null,
+      observedOptions: {
+        origin: 'hook',
+        status: 'unavailable',
+        reason: 'status_without_options',
+        lastReceivedAt: Date.UTC(2026, 8, 6, 10, 59, 0)
+      }
+    })
+
+    expect(line).toContain(
+      'Observed options: unavailable (status_without_options; last hook event 2026-09-06T10:59:00.000Z)'
+    )
+  })
+
+  it('keeps observed-options unknown on runtimes that never evaluated it', async () => {
+    const line = await showWorker({ status: 'live', exactWorker: true, agentWait: null })
+
+    expect(line).toContain('Observed options: unknown (not evaluated)')
+  })
 })

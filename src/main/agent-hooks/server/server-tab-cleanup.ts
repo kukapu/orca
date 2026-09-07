@@ -94,6 +94,9 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
     this.currentAuthorityObservations.delete(resolvedPaneKey)
     this.promptSentDedupeByPaneKey.delete(resolvedPaneKey)
     this.restartedStatusLaunchTokenHashByPaneKey.delete(resolvedPaneKey)
+    this.lastObservedOptionsByPaneKey.delete(resolvedPaneKey)
+    // Why: the pane itself is gone, so its session announcement fences nothing a later pane owns.
+    this.announcedProviderSessionByPaneKey.delete(resolvedPaneKey)
     // Why: the pane itself is gone, so its observation clock describes nothing a later pane owns.
     this.evidenceObservedAtByPaneKey.delete(resolvedPaneKey)
     let clearedAlias = false
@@ -107,6 +110,8 @@ export abstract class AgentHookServerTabCleanup extends AgentHookServerCleanup {
         this.currentAuthorityObservations.delete(legacyPaneKey)
         this.promptSentDedupeByPaneKey.delete(legacyPaneKey)
         this.restartedStatusLaunchTokenHashByPaneKey.delete(legacyPaneKey)
+        this.lastObservedOptionsByPaneKey.delete(legacyPaneKey)
+        this.announcedProviderSessionByPaneKey.delete(legacyPaneKey)
         this.evidenceObservedAtByPaneKey.delete(legacyPaneKey)
         clearedAlias = true
       }

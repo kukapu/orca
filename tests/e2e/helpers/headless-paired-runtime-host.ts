@@ -81,6 +81,10 @@ export async function launchHeadlessPairedRuntimeHost(
     executablePath?: string
     /** Bind a stable loopback port so `restartServeProcess` can reclaim it. */
     pinnedServePort?: boolean
+    /** Merged into the profile's settings before the first launch: the only
+     * reliable window for keys the client-facing settings.update RPC does not
+     * accept (e.g. agentCmdOverrides). */
+    settingsOverrides?: Record<string, unknown>
     userDataParent?: string
   } = {}
 ): Promise<HeadlessPairedRuntimeHost> {
@@ -88,15 +92,21 @@ export async function launchHeadlessPairedRuntimeHost(
     path.join(options.userDataParent ?? os.tmpdir(), 'orca-e2e-headless-paired-')
   )
   const servePort = options.pinnedServePort === true ? await reserveFreeLoopbackPort() : 0
-  let agentBrowserSocketDir: string | null = null
+  const agentBrowserSocketDir: string | null = options.agentBrowserSocketParent
+    ? mkdtempSync(path.join(options.agentBrowserSocketParent, 'orca-ab-'))
+    : null
   let app: ElectronApplication | undefined
   try {
-    agentBrowserSocketDir = options.agentBrowserSocketParent
-      ? mkdtempSync(path.join(options.agentBrowserSocketParent, 'orca-ab-'))
-      : null
+    const profile = getE2ECompletedOnboardingProfile()
     writeFileSync(
       path.join(userDataDir, 'orca-data.json'),
-      `${JSON.stringify(getE2ECompletedOnboardingProfile(), null, 2)}\n`
+      `${JSON.stringify(
+        options.settingsOverrides
+          ? { ...profile, settings: { ...profile.settings, ...options.settingsOverrides } }
+          : profile,
+        null,
+        2
+      )}\n`
     )
     const { ELECTRON_RUN_AS_NODE: _unused, ...cleanEnv } = process.env
     void _unused
@@ -126,13 +136,16 @@ export async function launchHeadlessPairedRuntimeHost(
           '--serve-pairing-address',
           '127.0.0.1'
         ],
-        env: isolation.env
+        // Why cast, not filter: dropping undefined values here would change
+        // the child env; Node already treats them as unset at spawn.
+        env: isolation.env as Record<string, string>
       })
     app = await launchServeProcess()
+    const launchedApp: ElectronApplication = app
     const [offer] = await Promise.all([
-      readPairingOffer(app),
+      readPairingOffer(launchedApp),
       retryTransientMainEvaluate(() =>
-        app.evaluate(({ app: electronApp }) => electronApp.getPath('home'))
+        launchedApp.evaluate(({ app: electronApp }) => electronApp.getPath('home'))
       ).then((home) => assertElectronResolvedIsolatedHome(home, isolation))
     ])
     let serveProcess = app
@@ -173,9 +186,10 @@ export async function launchHeadlessPairedRuntimeHost(
       }
     }
   } catch (error) {
+    const launchedApp = app
     try {
       await cleanupHeadlessHostResources([
-        ...(app ? [() => closeElectronAppForE2E(app)] : []),
+        ...(launchedApp ? [() => closeElectronAppForE2E(launchedApp)] : []),
         () => cleanupE2EDaemons(userDataDir),
         () => rmSync(userDataDir, { recursive: true, force: true }),
         ...(agentBrowserSocketDir

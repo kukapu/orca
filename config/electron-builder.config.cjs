@@ -185,6 +185,12 @@ module.exports = {
     // it is gitignored, but exclude it defensively so a stray local capture at
     // package time never bloats app.asar.
     '!pr-evidence{,/**/*}',
+    // Why: a custom directories.output only excludes that subdir, so previous
+    // builds under dist/ would otherwise land inside app.asar.
+    '!dist{,/**/*}',
+    // Why: local e2e/report outputs are never runtime inputs; same defensive
+    // exclusion as pr-evidence so a stray run at package time cannot bloat the asar.
+    '!{test-results,playwright-report}{,/**/*}',
     // Why: local agent/tooling directories may contain worktree symlink loops;
     // they are never runtime inputs and must not be traversed by electron-builder.
     '!{.claude,.grok,.agents,.codex}{,/**/*}',

@@ -11,6 +11,7 @@ import {
   type AgentStartupShell
 } from './tui-agent-startup-shell'
 import type { TuiAgent } from './tui-agent'
+import { getPiPromptBoundary, type PiPromptBoundary } from './pi-prompt-boundary'
 
 export type ResolvedAgentLaunchCommand =
   | {
@@ -18,6 +19,7 @@ export type ResolvedAgentLaunchCommand =
       command: string
       commandWithoutSessionOptions: string
       appliedSessionOptions: Record<string, SessionOptionValue>
+      piPromptBoundary?: PiPromptBoundary | null
     }
   | { ok: false; error: string }
 
@@ -96,7 +98,22 @@ export function resolveAgentLaunchCommand(args: {
         ? `${commandWithOptions} ${suffix.suffix}`
         : commandWithOptions,
     commandWithoutSessionOptions,
-    appliedSessionOptions: resolvedOptions.appliedValues
+    appliedSessionOptions: resolvedOptions.appliedValues,
+    ...(args.agent === 'pi'
+      ? {
+          piPromptBoundary: getPiPromptBoundary({
+            command,
+            shell: args.shell,
+            launchArgs: args.sessionOptionsOverrideAgentArgs
+              ? overrideTokens
+              : [...resolvedOptions.args, ...trailingTokens.tokens],
+            configuredArgs: trailingTokens.tokens,
+            overridesSessionOptions: Boolean(
+              args.sessionOptionsOverrideAgentArgs && resolvedOptions.args.length > 0
+            )
+          })
+        }
+      : {})
   }
 }
 

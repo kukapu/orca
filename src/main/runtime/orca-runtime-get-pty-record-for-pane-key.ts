@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { createHash } from 'node:crypto'
 import { OrcaRuntimeWithPruneMobileSessionTabGroupLayout } from './orca-runtime-prune-mobile-session-tab-group-layout'
 import type { RuntimeLeafRecord, RuntimePtyWorktreeRecord } from './runtime-terminal-state-records'
 import { isTerminalLeafId, makePaneKey, parsePaneKey } from '../../shared/stable-pane-id'
@@ -6,6 +7,31 @@ import { detectAgentStatusFromTitle, isClaudeManagementTitle } from '../../share
 import { recognizeAgentProcess } from '../../shared/agent-process-recognition'
 
 export class OrcaRuntimeWithGetPtyRecordForPaneKey extends OrcaRuntimeWithPruneMobileSessionTabGroupLayout {
+  /** Live launch-generation authority for a pane, read from the same PTY
+   *  registry the exact-worker readers scope by: sha256 of the connected
+   *  pty's launchToken. `null` = connected local pane with no token
+   *  (plain shell — tokenless is a first-class state); `undefined` = this
+   *  host cannot know (no connected pty for the pane, or a remote-execution
+   *  pane whose token may have been minted off-host). Only a string is
+   *  generation proof; callers must treat both non-strings as "no proof".
+   *  Read-only pull: never caches, never consults hook status (which would
+   *  make the fence trust the payloads it is meant to check). */
+  getLiveLaunchTokenHashForPaneKey(paneKey: string): string | null | undefined {
+    let pty: RuntimePtyWorktreeRecord | null = null
+    try {
+      pty = this.getPtyRecordForPaneKey(paneKey)
+    } catch {
+      return undefined
+    }
+    if (!pty?.connected) {
+      return undefined
+    }
+    if (pty.connectionId && !pty.launchToken) {
+      return undefined
+    }
+    return pty.launchToken ? createHash('sha256').update(pty.launchToken).digest('hex') : null
+  }
+
   protected getPtyRecordForPaneKey(paneKey: string): RuntimePtyWorktreeRecord | null {
     const parsed = parsePaneKey(paneKey)
     let leafPty: RuntimePtyWorktreeRecord | null = null

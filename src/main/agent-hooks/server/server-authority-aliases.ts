@@ -144,6 +144,23 @@ export abstract class AgentHookServerAuthorityAliases extends AgentHookServerAut
     const normalizedPtyId = ptyId?.trim() || existing?.ptyId || null
     const hadStatus = this.state.lastStatusByPaneKey.has(previousOwnerPaneKey)
     movePaneCacheState(this.state, previousOwnerPaneKey, toPaneKey)
+    // Why: pane ownership moves with its session authority and observed
+    // evidence, like every other pane cache above — the transferred process
+    // keeps reporting under the new key. Source wins (matching the row move);
+    // only these two slots are touched, and the detached key is always
+    // cleared so it cannot fence later posts that resolve here by alias.
+    const movedAuthority = this.announcedProviderSessionByPaneKey.get(previousOwnerPaneKey)
+    this.announcedProviderSessionByPaneKey.delete(previousOwnerPaneKey)
+    if (movedAuthority !== undefined) {
+      this.announcedProviderSessionByPaneKey.delete(toPaneKey)
+      this.announcedProviderSessionByPaneKey.set(toPaneKey, movedAuthority)
+    }
+    const movedOptions = this.lastObservedOptionsByPaneKey.get(previousOwnerPaneKey)
+    this.lastObservedOptionsByPaneKey.delete(previousOwnerPaneKey)
+    if (movedOptions !== undefined) {
+      this.lastObservedOptionsByPaneKey.delete(toPaneKey)
+      this.lastObservedOptionsByPaneKey.set(toPaneKey, { ...movedOptions, paneKey: toPaneKey })
+    }
     const movedStatus = this.state.lastStatusByPaneKey.get(toPaneKey) as
       | EnrichedAgentHookEventPayload
       | undefined

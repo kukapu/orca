@@ -31,7 +31,14 @@ export function enqueueFederationRelay(
   try {
     if (params.settleRemoteOutcome) {
       const attachment = this.getRemoteDispatchAttachment(params.dispatchId)
-      if (!attachment || attachment.state !== 'ready') {
+      // Why the authority requirement: legacy enqueue settlement is a report path, so a
+      // stalled failure qualifies only while its retained capability can prove the
+      // sender (#16095); stopping such a worker uses the hash-free stop predicate.
+      if (
+        !attachment ||
+        (attachment.state !== 'ready' &&
+          !this.isUnobservedPromptAttachment(attachment, { requireRetainedCapability: true }))
+      ) {
         throw new OrchestrationError(
           'dispatch_inactive',
           `Remote Dispatch ${params.dispatchId} is not active.`

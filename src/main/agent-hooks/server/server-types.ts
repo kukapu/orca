@@ -4,9 +4,22 @@ import type {
   AgentStatusClearIpcPayload,
   AgentStatusState
 } from '../../../shared/agent-status-types'
-import type { AgentStatusObservation } from '../../../shared/agent-status-observation'
+import type {
+  AgentStatusObservation,
+  AgentStatusObservationOrigin
+} from '../../../shared/agent-status-observation'
 import type { AgentKind } from '../../../shared/telemetry-events'
 import type { LegacyPaneKeyAliasEntry } from '../../../shared/persisted-state-types'
+import type { AgentHookSource } from '../../../shared/agent-hook-relay'
+
+/** The provider session a pane's boundary last proved live: announcements plus
+ *  OpenCode's user-turn message (its real resume signal). Generation-scoped by
+ *  launchToken — a new process never inherits the previous fence. */
+export type AnnouncedProviderSession = {
+  sessionId: string
+  source: AgentHookSource
+  launchToken?: string
+}
 
 // Why: server-side enrichment — receivedAt = latest event arrival, stateStartedAt = when the current state first appeared; extra fields ride the shared map untouched (it only writes/clears).
 export type EnrichedAgentHookEventPayload = AgentHookEventPayload & {
@@ -53,6 +66,28 @@ export type AgentHookStatusChangeEntry = {
   state: AgentStatusState
   receivedAt: number
   observedInCurrentRuntime: boolean
+}
+
+/** Newest observed launch-option evidence for a pane, kept beside the mutable
+ *  last-status row so option-less lifecycle events (Idle, tool posts) cannot
+ *  erase it before an exact-worker read consumes it. */
+export type AgentHookObservedOptionsRow = {
+  paneKey: string
+  connectionId: string | null
+  launchToken?: string
+  /** Provider session the evidence was observed in; a later session in the same
+   *  pane (OpenCode /new, Pi session_start) fences it instead of inheriting it. */
+  providerSessionId?: string
+  agentType?: string
+  model?: string
+  thinkingLevel?: string
+  variant?: string
+  origin: AgentStatusObservationOrigin
+  /** Field name the runtime's candidate row reads; `observedAt` here would
+   *  silently fall back to the delivery clock there. */
+  evidenceObservedAt: number
+  receivedAt: number
+  observation?: AgentStatusObservation
 }
 
 export type AgentHookProviderSessionIdentity = {

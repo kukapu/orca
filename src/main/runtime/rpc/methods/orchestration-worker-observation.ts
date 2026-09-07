@@ -2,6 +2,12 @@ import type { RuntimeTerminalInteractiveWait } from '../../../../shared/runtime-
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import type { OrchestrationDb } from '../../orchestration/db'
 import { OrchestrationError } from '../../orchestration/orchestration-error'
+import {
+  buildWorkerObservedOptionsObservation,
+  workerIdentityNotExactObservedOptions,
+  type WorkerObservedOptionsObservation
+} from '../../orchestration/worker-observed-options'
+import { orchestrationTimestampToMs } from './orchestration-worker-output'
 import type {
   DispatchContextRow,
   FederatedDispatchRow,
@@ -94,7 +100,14 @@ export async function showContextOnlyWorker(
       status: observation.status,
       exactWorker: observation.exact,
       ...(observation.reason ? { reason: observation.reason } : {}),
-      ...(observation.agentWait !== undefined ? { agentWait: observation.agentWait } : {})
+      ...(observation.agentWait !== undefined ? { agentWait: observation.agentWait } : {}),
+      // Why: no supervised worker record means no worker launch to observe; the
+      // pane may still be an agent, but it is not this Dispatch's worker.
+      observedOptions: {
+        origin: 'agent-hook' as const,
+        status: 'unavailable' as const,
+        reason: 'no_supervised_worker'
+      }
     },
     terminalResource: null
   }
@@ -106,6 +119,38 @@ export function exposeWorker(worker: WorkerDispatchRow) {
     effects: JSON.parse(worker.effects) as unknown[],
     residualResources: JSON.parse(worker.residual_resources) as unknown[],
     startOptions: JSON.parse(worker.start_options) as unknown
+  }
+}
+
+/** Observation body for a locally supervised worker. Why a helper: the exact
+ *  worker-show observation (liveness verdict + interactive wait + observed
+ *  launch options) is one contract, assembled where its pieces live. */
+export function resolveLocalWorkerObservation(
+  runtime: OrcaRuntimeService,
+  worker: WorkerDispatchRow,
+  observation: Awaited<ReturnType<typeof inspectWorkerTerminal>>
+) {
+  // Why: evaluated on this host — the one that owns the terminal and received
+  // the hook events — never on the polling client. Absence is always explicit.
+  const observedOptions =
+    observation.exact && worker.agent_terminal_handle
+      ? buildWorkerObservedOptionsObservation({
+          selection: runtime.getExactWorkerObservedOptions(
+            worker.agent_terminal_handle,
+            orchestrationTimestampToMs(worker.created_at)
+          )
+        })
+      : workerIdentityNotExactObservedOptions()
+  return {
+    status: observation.status,
+    exactWorker: observation.exact,
+    // Why: a bare `unverifiable` is not actionable without naming what we lost.
+    ...(observation.reason ? { reason: observation.reason } : {}),
+    // Why conditional: a present null must mean "looked, nothing waiting". An
+    // unattached, missing or identity-changed worker was never looked at, and saying
+    // null there is the false negative this field exists to remove.
+    ...(observation.agentWait !== undefined ? { agentWait: observation.agentWait } : {}),
+    observedOptions
   }
 }
 
@@ -145,6 +190,9 @@ export async function callFederatedWorkerShow(
     reason?: string
     /** Absent from servers that predate the field; absence is unknown, not "not waiting". */
     agentWait?: RuntimeTerminalInteractiveWait | null
+    /** Absent from servers that predate the field; absence means not evaluated
+     *  on the executing host, never "no evidence". */
+    observedOptions?: WorkerObservedOptionsObservation
   }
 }> {
   return (await runtime.callOrchestrationWorkerServer(

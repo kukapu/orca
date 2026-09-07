@@ -1,6 +1,5 @@
 import { open, stat } from 'node:fs/promises'
 import type { AgentType, NativeChatMessage } from '../../../shared/native-chat-types'
-import { resolveNativeChatTranscriptAgent } from '../../../shared/native-chat-agent-support'
 import type { OrchestrationWorkerReadFallbackReason } from '../../../shared/orchestration-worker-output'
 import { resolveSessionFilePath } from '../../native-chat/session-file-resolver'
 import {
@@ -9,11 +8,17 @@ import {
   readNativeChatTranscriptTailFile,
   type NativeChatLineDecoder
 } from '../../native-chat/transcript-tail-reader'
+import { decodeOmpTranscriptLine } from '../../native-chat/transcript-line-decoders'
 import { transcriptFallbackId } from '../../native-chat/transcript-fallback-id'
 import {
   boundWorkerTranscriptMessages,
   clampWorkerTranscriptLimit
 } from './worker-transcript-payload'
+import { readOpenCodeWorkerTranscript } from './worker-transcript-opencode'
+import {
+  piWorkerTranscriptMatchesSession,
+  resolvePiWorkerTranscriptPath
+} from './worker-transcript-pi'
 
 const MAX_FORWARD_TRANSCRIPT_SCAN_BYTES = 8 * 1024 * 1024
 
@@ -30,6 +35,9 @@ type WorkerTranscriptReadSuccess = {
   nextOffset: number
   limited: boolean
   warnings: string[]
+  // Content digest of the bounded source snapshot; folds into the RPC sourceIdentity so any
+  // mutation between cursor reads surfaces as source_changed. Only snapshot-backed readers set it.
+  sourceDigest?: string
 }
 
 export type WorkerTranscriptReadResult = WorkerTranscriptReadFailure | WorkerTranscriptReadSuccess
@@ -41,24 +49,34 @@ export async function readWorkerTranscript(args: {
   offset?: number
   endOffset?: number
   limit?: number
+  connectionId?: string | null
 }): Promise<WorkerTranscriptReadResult> {
-  const transcriptAgent = resolveNativeChatTranscriptAgent(args.agent)
-  if (!transcriptAgent) {
-    return { ok: false, reason: 'provider_unsupported', warnings: [] }
+  if (args.connectionId) {
+    return { ok: false, reason: 'remote_capability_unavailable', warnings: [] }
   }
-  const decode = nativeChatLineDecoderForAgent(args.agent)
+  if (args.agent === 'opencode') {
+    return readOpenCodeWorkerTranscript(args)
+  }
+  const decode =
+    args.agent === 'pi' ? decodeOmpTranscriptLine : nativeChatLineDecoderForAgent(args.agent)
   if (!decode) {
     return { ok: false, reason: 'provider_unsupported', warnings: [] }
   }
   let filePath: string | null
   try {
-    filePath = await resolveSessionFilePath(args.agent, args.sessionId, {
-      transcriptPath: args.transcriptPath
-    })
+    filePath =
+      args.agent === 'pi'
+        ? await resolvePiWorkerTranscriptPath(args.transcriptPath)
+        : await resolveSessionFilePath(args.agent, args.sessionId, {
+            transcriptPath: args.transcriptPath
+          })
   } catch {
     return { ok: false, reason: 'transcript_unreadable', warnings: [] }
   }
   if (!filePath) {
+    return { ok: false, reason: 'transcript_missing', warnings: [] }
+  }
+  if (args.agent === 'pi' && !(await piWorkerTranscriptMatchesSession(filePath, args.sessionId))) {
     return { ok: false, reason: 'transcript_missing', warnings: [] }
   }
   const limit = clampWorkerTranscriptLimit(args.limit)

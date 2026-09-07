@@ -68,7 +68,13 @@ export const ORCHESTRATION_WORKER_STOP_METHODS: RpcMethod[] = [
             }
           }
           if (remote.state === 'succeeded' || remote.state === 'failed') {
-            db.resumeFederatedWorkerForTerminalRelay(params.dispatch)
+            // Why the guard: an unobserved-prompt failure settles from its own `failed`
+            // record via the relay import; resuming would rewrite the worker as ready
+            // before its report lands. The resume reversal is for a stop begun against
+            // a still-active worker.
+            if (db.getDispatchContextById(params.dispatch)?.status !== 'failed') {
+              db.resumeFederatedWorkerForTerminalRelay(params.dispatch)
+            }
             await runtime
               .syncOrchestrationFederatedDispatchAfterCurrent(params.dispatch)
               .catch(() => undefined)

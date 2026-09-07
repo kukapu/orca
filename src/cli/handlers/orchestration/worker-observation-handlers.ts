@@ -12,12 +12,59 @@ import type {
 } from '../../../shared/orchestration-worker-output'
 import { formatWorkerRead, type LegacyWorkerReadResult } from './worker-output'
 
+type ObservedOptionsLine = {
+  origin: string
+  status: 'observed' | 'unavailable'
+  reason?: string
+  agent?: string
+  model?: string
+  thinkingLevel?: string
+  variant?: string
+  observedAt?: number
+  lastReceivedAt?: number
+}
+
+function formatObservedOptions(options: ObservedOptionsLine | undefined): string {
+  // Why: absence is a version statement (old runtime or old federated server), never "no evidence".
+  if (options === undefined) {
+    return 'unknown (not evaluated)'
+  }
+  if (options.status === 'unavailable') {
+    const clock = options.lastReceivedAt
+      ? `; last hook event ${new Date(options.lastReceivedAt).toISOString()}`
+      : ''
+    return `unavailable (${options.reason ?? 'no evidence'}${clock})`
+  }
+  const fields = [
+    options.model ? `model=${options.model}` : null,
+    options.thinkingLevel ? `thinking=${options.thinkingLevel}` : null,
+    options.variant ? `variant=${options.variant}` : null
+  ].filter((entry): entry is string => entry !== null)
+  const detail = fields.length > 0 ? fields.join(' ') : 'no fields observed'
+  const agent = options.agent ? ` agent=${options.agent}` : ''
+  const clock = options.observedAt ? ` at ${new Date(options.observedAt).toISOString()}` : ''
+  return `${detail}${agent} (via ${options.origin}${clock})`
+}
+
 export const ORCHESTRATION_WORKER_OBSERVATION_HANDLERS: Record<string, CommandHandler> = {
   'orchestration worker-show': async ({ flags, client, json }) => {
     const result = await client.call<{
       dispatch: { id: string; task_id: string; status: string }
       worker: { state: string; stage: string; agent_terminal_handle: string | null }
-      observation?: { agentWait?: { source: string; reason?: string } | null }
+      observation?: {
+        agentWait?: { source: string; reason?: string } | null
+        observedOptions?: {
+          origin: string
+          status: 'observed' | 'unavailable'
+          reason?: string
+          agent?: string
+          model?: string
+          thinkingLevel?: string
+          variant?: string
+          observedAt?: number
+          lastReceivedAt?: number
+        }
+      }
     }>('orchestration.workerShow', {
       dispatch: getRequiredStringFlag(flags, 'dispatch')
     })
@@ -28,9 +75,10 @@ export const ORCHESTRATION_WORKER_OBSERVATION_HANDLERS: Record<string, CommandHa
         return `${base}\nInteractive wait: unknown (not evaluated)`
       }
       const wait = value.observation.agentWait
-      return wait
-        ? `${base}\nWaiting on a human: ${wait.reason ?? 'interactive prompt'} (via ${wait.source})`
-        : `${base}\nInteractive wait: none`
+      const waitLine = wait
+        ? `Waiting on a human: ${wait.reason ?? 'interactive prompt'} (via ${wait.source})`
+        : 'Interactive wait: none'
+      return `${base}\n${waitLine}\nObserved options: ${formatObservedOptions(value.observation.observedOptions)}`
     })
   },
 

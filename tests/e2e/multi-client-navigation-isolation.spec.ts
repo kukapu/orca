@@ -7,6 +7,9 @@ import path from 'node:path'
 import type { ElectronApplication, Page } from '@stablyai/playwright-test'
 import { test, expect } from './helpers/orca-app'
 import { worktreeRow, worktreeRowSurface } from './worktree-row-locators'
+import { parsePairingCode } from '../../src/shared/pairing'
+import { RemoteRuntimeRequestConnection } from '../../src/shared/remote-runtime-request-connection'
+import type { DetectedWorktreeListResult } from '../../src/shared/worktree/types'
 
 type RuntimePairingOffer = {
   deviceId: string
@@ -84,6 +87,89 @@ async function createPairingOffer(hostPage: Page): Promise<RuntimePairingOffer> 
   })
 }
 
+async function pinClientUiEnglish(page: Page): Promise<void> {
+  // Why uiLanguage is a per-device web-client preference (never runtime-backed),
+  // so a fresh partition resolves 'system' — the host OS locale — and every English
+  // role-name assertion below goes red on non-English machines.
+  await page.evaluate(async () => {
+    await window.__store?.getState().updateSettings({ uiLanguage: 'en' })
+  })
+  await expect
+    .poll(() => page.evaluate(() => window.__store?.getState().settings?.uiLanguage ?? null))
+    .toBe('en')
+}
+
+// Why: webClientUrl keeps the runtime pairing offer in its hash fragment (out of
+// proxy logs), and the RPC probe needs that offer as a PairingOffer object.
+function pairingOfferFromWebClientUrl(webClientUrl: string) {
+  const pairingUrl = new URLSearchParams(new URL(webClientUrl).hash.replace(/^#/, '')).get(
+    'pairing'
+  )
+  const pairing = pairingUrl ? parsePairingCode(pairingUrl) : null
+  if (!pairing) {
+    throw new Error('Paired RPC probe could not parse the runtime pairing offer')
+  }
+  return pairing
+}
+
+/**
+ * Proves the paired-client precondition on the plane clients actually consume:
+ * a paired RPC connection calling `worktree.detectedList` for the same repo id
+ * must see the expected branches before any client window opens. The host's IPC
+ * lane converges by pull and proves nothing about the runtime catalog the web
+ * clients read; without this gate the 90s DOM poll races the runtime scan cache
+ * instead of testing independent navigation.
+ */
+async function waitForRuntimeDetectedWorktrees(
+  hostPage: Page,
+  expectedBranches: string[],
+  timeoutMs = 45_000
+): Promise<void> {
+  const repoId = await hostPage.evaluate(() => window.__store?.getState().repos[0]?.id ?? null)
+  if (!repoId) {
+    throw new Error('Paired RPC probe could not resolve the host repo id')
+  }
+  const probeOffer = await createPairingOffer(hostPage)
+  const connection = new RemoteRuntimeRequestConnection(
+    pairingOfferFromWebClientUrl(probeOffer.webClientUrl)
+  )
+  const deadline = Date.now() + timeoutMs
+  const rpcErrorCodes: string[] = []
+  let lastBranches: string[] = []
+  let lastSawMain = false
+  try {
+    while (Date.now() < deadline) {
+      const response = await connection.request<DetectedWorktreeListResult>(
+        'worktree.detectedList',
+        { repo: repoId },
+        15_000
+      )
+      if (response.ok) {
+        if (response.result.repoId !== repoId) {
+          throw new Error(
+            `worktree.detectedList answered for repo ${response.result.repoId}, expected ${repoId}`
+          )
+        }
+        lastBranches = response.result.worktrees.map((worktree) => worktree.branch)
+        lastSawMain = response.result.worktrees.some((worktree) => worktree.isMainWorktree)
+        const missing = expectedBranches.filter((branch) => !lastBranches.includes(branch))
+        if (missing.length === 0 && lastSawMain) {
+          return
+        }
+      } else {
+        rpcErrorCodes.push(response.error.code)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+    }
+    const rpcErrorSummary = [...new Set(rpcErrorCodes)]
+    throw new Error(
+      `Paired RPC catalog did not converge in ${timeoutMs}ms (repo ${repoId}): expected branches ${JSON.stringify(expectedBranches)}, last saw ${JSON.stringify(lastBranches)} (main worktree: ${lastSawMain}), rpc error codes ${JSON.stringify(rpcErrorSummary)}`
+    )
+  } finally {
+    connection.close()
+  }
+}
+
 async function openPairedClient(
   electronApp: ElectronApplication,
   offer: RuntimePairingOffer,
@@ -112,7 +198,19 @@ async function openPairedClient(
   )
   const page = await pagePromise
   await expect(page.locator('[data-worktree-sidebar]')).toBeVisible({ timeout: 30_000 })
-  await expect(worktreeRow(page, visibleWorktreeId)).toBeVisible({ timeout: 30_000 })
+  await pinClientUiEnglish(page)
+  // Why the poll: the runtime's worktree catalog is eventually consistent with
+  // on-disk git state (scan-cache TTL), and on slower machines the freshly paired
+  // client's first catalog snapshot can lag past a flat 30s visibility timeout.
+  await expect
+    .poll(
+      async () => {
+        const row = worktreeRow(page, visibleWorktreeId)
+        return (await row.count()) > 0 && (await row.isVisible())
+      },
+      { timeout: 90_000, message: 'Expected paired client catalog to catch up to disk worktrees' }
+    )
+    .toBe(true)
   return page
 }
 
@@ -153,6 +251,14 @@ test('keeps two paired browser clients and the host on independent worktrees', a
   }
 
   await selectWorktree(orcaPage, ids.host)
+
+  // Why: clients consume the runtime RPC catalog, not the host IPC lane, so their
+  // setup must be proven on that plane before any client window opens.
+  await waitForRuntimeDetectedWorktrees(orcaPage, [
+    'refs/heads/e2e-secondary',
+    `refs/heads/${branchA}`,
+    `refs/heads/${branchB}`
+  ])
 
   let clientA: Page | null = null
   let clientB: Page | null = null
@@ -203,6 +309,14 @@ test('keeps a paired client workspace create-with-agent off the other client and
   }
 
   await selectWorktree(orcaPage, ids.host)
+
+  // Why: same paired-client precondition as the navigation test — the runtime RPC
+  // catalog must already show the disk-created branches before clients pair.
+  await waitForRuntimeDetectedWorktrees(orcaPage, [
+    'refs/heads/e2e-secondary',
+    `refs/heads/${branchA}`,
+    `refs/heads/${branchB}`
+  ])
 
   let clientA: Page | null = null
   let clientB: Page | null = null

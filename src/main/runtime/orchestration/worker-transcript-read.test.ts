@@ -143,6 +143,144 @@ describe('worker transcript reads', () => {
     ).resolves.toEqual({ ok: false, reason: 'provider_unsupported', warnings: [] })
   })
 
+  it('reads the exact Pi JSONL session from the hook path without scanning others', async () => {
+    const otherPath = join(directory, 'other-pi.jsonl')
+    await writeFile(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: 'session',
+          id: 'pi-exact',
+          timestamp: '2026-05-01T10:08:00.000Z',
+          cwd: '/tmp/pi'
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'pi-user',
+          timestamp: '2026-05-01T10:08:01.000Z',
+          message: { role: 'user', content: [{ type: 'text', text: 'Pi worker prompt' }] }
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'pi-assistant',
+          timestamp: '2026-05-01T10:08:02.000Z',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'Pi structured output' }] }
+        })
+      ]
+        .join('\n')
+        .concat('\n')
+    )
+    await writeFile(
+      otherPath,
+      `${JSON.stringify({
+        type: 'message',
+        id: 'pi-other',
+        timestamp: '2026-05-01T10:09:00.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'other session only' }] }
+      })}\n`
+    )
+
+    const initial = await readWorkerTranscript({
+      agent: 'pi',
+      sessionId: 'pi-exact',
+      transcriptPath,
+      limit: 1
+    })
+    expect(initial).toMatchObject({
+      ok: true,
+      messages: [{ id: 'pi-assistant', blocks: [{ type: 'text', text: 'Pi structured output' }] }],
+      limited: true
+    })
+    if (!initial.ok) {
+      throw new Error('Expected the Pi transcript page')
+    }
+    expect(JSON.stringify(initial.messages)).not.toContain('other session only')
+
+    await appendFile(
+      transcriptPath,
+      `${JSON.stringify({
+        type: 'message',
+        id: 'pi-follow',
+        timestamp: '2026-05-01T10:08:03.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Pi follow-up' }] }
+      })}\n`
+    )
+    await expect(
+      readWorkerTranscript({
+        agent: 'pi',
+        sessionId: 'pi-exact',
+        transcriptPath,
+        offset: initial.nextOffset,
+        limit: 2
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      messages: [{ id: 'pi-follow', blocks: [{ type: 'text', text: 'Pi follow-up' }] }],
+      limited: false
+    })
+  })
+
+  it('does not return another Pi session when the header id disagrees', async () => {
+    await writeFile(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: 'session',
+          id: 'pi-other',
+          timestamp: '2026-05-01T10:08:00.000Z'
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'pi-wrong',
+          timestamp: '2026-05-01T10:08:01.000Z',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'wrong session body' }] }
+        })
+      ]
+        .join('\n')
+        .concat('\n')
+    )
+
+    await expect(
+      readWorkerTranscript({
+        agent: 'pi',
+        sessionId: 'pi-exact',
+        transcriptPath,
+        limit: 2
+      })
+    ).resolves.toMatchObject({ ok: false, reason: 'transcript_missing' })
+  })
+
+  it('does not invent a Pi transcript without the hook session file', async () => {
+    await expect(
+      readWorkerTranscript({
+        agent: 'pi',
+        sessionId: 'pi-exact',
+        limit: 2
+      })
+    ).resolves.toEqual({ ok: false, reason: 'transcript_missing', warnings: [] })
+  })
+
+  it('does not treat a JSONL path as Pi identity without a session header', async () => {
+    await writeFile(
+      transcriptPath,
+      `${JSON.stringify({
+        type: 'message',
+        id: 'pi-orphan',
+        timestamp: '2026-05-01T10:08:01.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'no session header' }] }
+      })}\n`
+    )
+
+    await expect(
+      readWorkerTranscript({
+        agent: 'pi',
+        sessionId: 'pi-exact',
+        transcriptPath,
+        limit: 2
+      })
+    ).resolves.toMatchObject({ ok: false, reason: 'transcript_missing' })
+  })
+
   it('reuses the Native Chat Grok decoder', async () => {
     await writeFile(transcriptPath, `${grokMessage('grok-one', 'Grok structured output')}\n`)
 

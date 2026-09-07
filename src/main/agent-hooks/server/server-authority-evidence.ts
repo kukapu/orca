@@ -9,6 +9,15 @@ import type {
 import { AgentHookServerStatusRetries } from './server-status-retries'
 
 export abstract class AgentHookServerAuthorityEvidence extends AgentHookServerStatusRetries {
+  /** Bind the execution host's live launch-token registry (runtime PTY
+   *  records). Unbound hosts — relay standalone servers, orcad, tests — keep
+   *  the pre-registry hook-data authority behavior. */
+  setLiveLaunchTokenHashProvider(
+    provider: ((paneKey: string) => string | null | undefined) | null
+  ): void {
+    this.liveLaunchTokenHashProvider = provider
+  }
+
   attestCompatibilityAuthority(candidate: {
     paneKey: string
     launchTokenHash: string

@@ -1,7 +1,19 @@
-import type { MessageRow, QuestionRow } from '../../types'
+import type { DispatchContextRow, MessageRow, QuestionRow } from '../../types'
 import { OrchestrationError } from '../../orchestration-error'
 import { exposeQuestionTimestamps } from '../utc-timestamp'
 import type { OrchestrationDb } from '../orchestration-db'
+
+function dispatchAllowsQuestions(this: OrchestrationDb, dispatch: DispatchContextRow): boolean {
+  if (dispatch.status === 'pending' || dispatch.status === 'dispatched') {
+    return true
+  }
+  return (
+    this.findAskableDispatchForAssignee(
+      dispatch.assignee_handle ?? '',
+      dispatch.assignee_pane_key ?? undefined
+    )?.id === dispatch.id
+  )
+}
 
 export function createQuestion(
   this: OrchestrationDb,
@@ -20,7 +32,7 @@ export function createQuestion(
     if (
       !dispatch ||
       dispatch.run_id !== params.runId ||
-      (dispatch.status !== 'pending' && dispatch.status !== 'dispatched')
+      !dispatchAllowsQuestions.call(this, dispatch)
     ) {
       throw new OrchestrationError(
         'dispatch_inactive',
@@ -94,6 +106,15 @@ export function answerQuestion(
         'dispatch_inactive',
         `Question ${params.messageId} is closed because its Dispatch is inactive.`
       )
+    }
+    if (question.status === 'pending') {
+      const dispatch = this.getDispatchContextById(question.dispatch_id)
+      if (!dispatch || !dispatchAllowsQuestions.call(this, dispatch)) {
+        throw new OrchestrationError(
+          'dispatch_inactive',
+          `Question ${params.messageId} is closed because its Dispatch is inactive.`
+        )
+      }
     }
     if (question.status === 'answered') {
       if (question.answer_body !== params.body || !question.answer_message_id) {

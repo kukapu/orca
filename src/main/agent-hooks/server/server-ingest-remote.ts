@@ -110,13 +110,24 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestT
       (envelope.compactTrigger === 'manual' || envelope.compactTrigger === 'auto')
         ? envelope.compactTrigger
         : undefined
+    // Why: normalized before disposition so the session-fence checks there can
+    // read the session identity and the side-row fallback's agentType; both
+    // are pure functions with no side effects.
+    const providerSession = normalizeAgentProviderSession(envelope.providerSession) ?? undefined
+    const validatedPayload = normalizeAgentStatusPayload(envelope.payload)
+    if (!validatedPayload) {
+      return
+    }
     const statusDisposition = this.getAgentStatusDisposition(paneKey, {
       source,
       rawSource: envelope.source,
       hookEventName,
       isReplay: envelope.isReplay === true,
       hasExplicitPrompt: envelope.hasExplicitPrompt === true,
-      launchToken: envelope.launchToken
+      launchToken: envelope.launchToken,
+      providerSession,
+      providerSessionOnly: envelope.providerSessionOnly === true,
+      payload: validatedPayload
     })
     if (statusDisposition === 'suppress') {
       return
@@ -152,12 +163,6 @@ export abstract class AgentHookServerIngestRemote extends AgentHookServerIngestT
       typeof envelope.toolAgentType === 'string' && envelope.toolAgentType.trim().length > 0
         ? envelope.toolAgentType.trim()
         : undefined
-    const providerSession = normalizeAgentProviderSession(envelope.providerSession) ?? undefined
-    // Why: relay crosses a trust boundary — re-run the canonical normalizer to enforce caps/invariants (returns null on malformed).
-    const validatedPayload = normalizeAgentStatusPayload(envelope.payload)
-    if (!validatedPayload) {
-      return
-    }
     // Why: restore a shed roster only when its digest and turn identity still match the cache.
     let normalizedPayload = restoreShedStatusFields(
       validatedPayload,

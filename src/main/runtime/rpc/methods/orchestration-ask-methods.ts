@@ -41,7 +41,7 @@ export const ORCHESTRATION_ASK_METHODS: RpcMethod[] = [
           taskId: remoteAttachment.task_id
         })
       }
-      const activeDispatch = db.getActiveDispatchForIdentity(from, paneKey)
+      const activeDispatch = db.getAskableDispatchForIdentity(from, paneKey)
       if (!activeDispatch) {
         throw new OrchestrationError(
           'dispatch_inactive',

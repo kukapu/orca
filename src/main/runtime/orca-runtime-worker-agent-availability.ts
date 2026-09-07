@@ -11,6 +11,7 @@ import {
   type WorkerAgentAvailabilityDeps,
   type WorkerAgentAvailabilityHost
 } from './rpc/methods/orchestration-worker-agent-availability'
+import { waitForWorktreeStartupDraft } from './runtime-worktree-startup-readiness'
 
 const WORKER_AGENT_AVAILABILITY_DEPS: WorkerAgentAvailabilityDeps = {
   detectLocalAgents: (context) => detectInstalledAgentsWithShellPathHydration(context),
@@ -18,6 +19,32 @@ const WORKER_AGENT_AVAILABILITY_DEPS: WorkerAgentAvailabilityDeps = {
 }
 
 export class OrcaRuntimeWithWorkerAgentAvailability extends OrcaRuntimeWithResolveWaiter {
+  /**
+   * Wait until a freshly spawned worker agent's composer is mounted.
+   * `tui-idle` can settle during OpenCode's pre-composer silence; the preamble
+   * paste must wait for the agent's draft-paste render marker instead.
+   */
+  async waitForWorkerAgentComposerReady(
+    handle: string,
+    agent: TuiAgent,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {}
+  ): Promise<boolean> {
+    const host = this.getWorktreeStartupReadinessHost()
+    const ptyIdBefore = host.getPtyId(handle)
+    if (!ptyIdBefore) {
+      return false
+    }
+    const generationBefore = this.getPtyLifecycleGeneration(ptyIdBefore)
+    const incarnationBefore = this.getTerminalProcessIncarnation(handle)
+    const readyPtyId = await waitForWorktreeStartupDraft(host, handle, agent, options)
+    return (
+      readyPtyId === ptyIdBefore &&
+      host.getPtyId(handle) === ptyIdBefore &&
+      this.getPtyLifecycleGeneration(ptyIdBefore) === generationBefore &&
+      this.getTerminalProcessIncarnation(handle) === incarnationBefore
+    )
+  }
+
   /**
    * Fence an explicit worker-start agent against the execution host that will
    * spawn it (#17943): local, a WSL distro, or an SSH connection. Throws

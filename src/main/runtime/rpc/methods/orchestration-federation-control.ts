@@ -3,10 +3,15 @@ import { ORCHESTRATION_WORKER_READ_SOURCES } from '../../../../shared/orchestrat
 import type { RuntimeTerminalInteractiveWait } from '../../../../shared/runtime-types'
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import { OrchestrationError } from '../../orchestration/orchestration-error'
+import { parseFederatedWorkerReportOutcome } from '../../orchestration/db/federated-worker-report-outcome'
 import type { RemoteDispatchAttachmentRow } from '../../orchestration/types'
 import { defineMethod, type RpcMethod } from '../core'
 import { OptionalFiniteNumber, requiredString } from '../schemas'
-import { readExactWorkerOutput } from './orchestration-worker-output'
+import { readExactWorkerOutput, orchestrationTimestampToMs } from './orchestration-worker-output'
+import {
+  buildWorkerObservedOptionsObservation,
+  workerIdentityNotExactObservedOptions
+} from '../../orchestration/worker-observed-options'
 import { describeUnconfirmedAgentStop } from '../../../../shared/pty-liveness-verdict'
 
 const FederationDispatchParams = z.object({
@@ -33,6 +38,17 @@ export const ORCHESTRATION_FEDERATION_CONTROL_METHODS: RpcMethod[] = [
         authenticatedCallerFingerprint
       )
       const observation = await inspectRemoteAttachment(runtime, params.dispatchId)
+      // Why: evaluated here on the executing host — the one that owns the terminal
+      // and received the hook events — never on the Run home or a desktop client.
+      const observedOptions =
+        observation.exact && attachment.terminal_handle
+          ? buildWorkerObservedOptionsObservation({
+              selection: runtime.getExactWorkerObservedOptions(
+                attachment.terminal_handle,
+                orchestrationTimestampToMs(attachment.created_at)
+              )
+            })
+          : workerIdentityNotExactObservedOptions()
       return {
         dispatchId: params.dispatchId,
         runtimeEpoch: runtime.getRuntimeId(),
@@ -42,7 +58,8 @@ export const ORCHESTRATION_FEDERATION_CONTROL_METHODS: RpcMethod[] = [
           status: observation.status,
           exactWorker: observation.exact,
           ...(observation.reason ? { reason: observation.reason } : {}),
-          ...(observation.agentWait !== undefined ? { agentWait: observation.agentWait } : {})
+          ...(observation.agentWait !== undefined ? { agentWait: observation.agentWait } : {}),
+          observedOptions
         }
       }
     }
@@ -128,8 +145,32 @@ export const ORCHESTRATION_FEDERATION_CONTROL_METHODS: RpcMethod[] = [
     name: 'orchestration.federationStop',
     params: FederationDispatchParams,
     handler: async (params, { runtime, authenticatedCallerFingerprint }) => {
-      requireHomeAttachment(runtime, params.dispatchId, authenticatedCallerFingerprint)
+      const attachment = requireHomeAttachment(
+        runtime,
+        params.dispatchId,
+        authenticatedCallerFingerprint
+      )
       const db = runtime.getOrchestrationDb()
+      // Why: a worker whose prompt went unobserved may have finished and queued its own
+      // report before the Run home asked to stop it. That first-hand report outranks the
+      // stop request; closing the terminal would strand the queued settlement. Only a
+      // retained capability can have queued one, so the authority reading applies here.
+      if (db.isUnobservedPromptAttachment(attachment, { requireRetainedCapability: true })) {
+        const pendingReport = db
+          .listPendingFederationRelay(params.dispatchId, 'to_home')
+          .find((item) => item.kind === 'worker_done')
+        const pendingOutcome = pendingReport
+          ? parseFederatedWorkerReportOutcome(pendingReport.payload)
+          : undefined
+        if (pendingOutcome) {
+          return {
+            dispatchId: params.dispatchId,
+            state: pendingOutcome,
+            alreadySettled: false,
+            processAction: 'none'
+          }
+        }
+      }
       const begun = db.beginRemoteAttachmentStop(params.dispatchId)
       if (['succeeded', 'failed', 'stopped', 'abandoned'].includes(begun.state)) {
         return {

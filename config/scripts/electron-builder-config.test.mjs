@@ -35,6 +35,8 @@ describe('electron-builder config', () => {
         '!tests{,/**/*}',
         '!examples{,/**/*}',
         '!pr-evidence{,/**/*}',
+        '!dist{,/**/*}',
+        '!{test-results,playwright-report}{,/**/*}',
         '!{.claude,.grok,.agents,.codex}{,/**/*}',
         '!Casks{,/**/*}',
         '!{AGENTS.md,CLAUDE.md,DEVELOPING.md,bundle-size-progress.md,ORCHESTRATION_IMPLEMENTATION_CHECKLIST.md,ORCHESTRATION_STRUCTURED_OUTPUT_DESIGN.md}',
@@ -101,6 +103,28 @@ describe('electron-builder config', () => {
     // The real build outputs sit beside it under out/ and must still ship.
     expect(packs('out/main/index.js')).toBe(true)
     expect(packs('out/renderer/index.html')).toBe(true)
+  })
+
+  // Why: a custom directories.output only auto-excludes that subdir, so prior
+  // builds under dist/ (AppImages, debs, linux-unpacked) landed in 1.4.197-kukapu.2's
+  // app.asar (~1.6 GB). Local e2e report dirs are the same class of stray bulk.
+  it('keeps previous package outputs and local e2e reports out of app.asar', () => {
+    const matcher = new FileMatcher('/app', '/dest', (value) => value, electronBuilderConfig.files)
+    matcher.prependPattern('**/*')
+    const isPacked = matcher.createFilter()
+    const packs = (repoPath) => isPacked(join('/app', repoPath), { isDirectory: () => false })
+
+    for (const staleOutput of [
+      'dist/orca-linux.AppImage',
+      'dist/orca-ide_1.4.197-kukapu.1_amd64.deb',
+      'dist/linux-unpacked/resources/app.asar',
+      'dist/release-1.4.197-kukapu.2/orca-linux.AppImage',
+      'test-results/.last-run.json',
+      'playwright-report/index.html'
+    ]) {
+      expect(packs(staleOutput)).toBe(false)
+    }
+    expect(packs('out/main/index.js')).toBe(true)
   })
 
   it('keeps runtime resources available through extraResources', () => {

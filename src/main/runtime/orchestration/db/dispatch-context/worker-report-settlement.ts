@@ -147,16 +147,21 @@ export function settleWorkerReportInTransaction(
       reason: `Dispatch ${params.dispatchId} changed while its worker report was settling.`
     }
   }
+  // Why the widened match for an unobserved prompt: recovery may have moved the worker
+  // row to `stopping`/`stop_unknown` while its dispatch kept the failed record — the
+  // worker's own report still supersedes whichever recovery state it corrected.
   this.db
     .prepare(
       `UPDATE worker_dispatches
        SET state = ?, stage = 'settled', updated_at = datetime('now')
-       WHERE dispatch_id = ? AND state = ?`
+       WHERE dispatch_id = ? AND ${
+         settledByUnobservedPrompt ? "state IN ('failed', 'stopping', 'stop_unknown')" : 'state = ?'
+       }`
     )
     .run(
       params.outcome === 'succeeded' ? 'succeeded' : 'failed',
       params.dispatchId,
-      previous.workerState
+      ...(settledByUnobservedPrompt ? [] : [previous.workerState])
     )
   settleActiveDispatchesForTask(
     this,

@@ -95,7 +95,16 @@ export function buildAgentStartupPlan(args: {
   const quotedPrompt = quoteStartupArg(trimmedPrompt, shell)
 
   if (config.promptInjectionMode === 'argv') {
-    const promptSeparator = config.argvPromptSeparator ? ` ${config.argvPromptSeparator}` : ''
+    let promptSeparator = config.argvPromptSeparator ? ` ${config.argvPromptSeparator}` : ''
+    if (agent === 'pi') {
+      const boundary = baseCommand.piPromptBoundary
+      if (!boundary) {
+        return null
+      }
+      if (boundary.terminated) {
+        promptSeparator = ''
+      }
+    }
     return {
       agent,
       launchCommand: `${baseCommand.command}${promptSeparator} ${quotedPrompt}`,

@@ -13,7 +13,16 @@ export function formatWorkerRead(
   if (!('source' in value) || value.source === 'terminal') {
     return value.terminal.tail.join('\n')
   }
-  return value.transcript.messages.map(formatWorkerTranscriptMessage).join('\n\n')
+  const body = value.transcript.messages.map(formatWorkerTranscriptMessage).join('\n\n')
+  const warnings = value.warnings ?? []
+  if (!value.transcript.limited && warnings.length === 0) {
+    return body
+  }
+  const notes = [
+    ...warnings,
+    ...(value.transcript.limited ? ['Transcript is partial; continue with the cursor.'] : [])
+  ]
+  return [body, ...notes].filter(Boolean).join('\n')
 }
 
 function formatWorkerTranscriptMessage(message: NativeChatMessage): string {

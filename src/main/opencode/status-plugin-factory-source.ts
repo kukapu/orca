@@ -26,6 +26,7 @@ export function getStatusPluginFactorySource(options: { emitSessionStart: boolea
     '    if (event.type === "message.updated") {',
     '      const info = event.properties && event.properties.info;',
     '      rememberMessageRole(info && info.id, info && info.role);',
+    '      rememberMessageOptions(info);',
     '    }',
     '',
     '    const sessionID = event.properties?.sessionID;',

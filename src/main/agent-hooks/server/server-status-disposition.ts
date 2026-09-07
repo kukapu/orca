@@ -2,16 +2,38 @@ import { createHash } from 'node:crypto'
 
 import { isNewTurnEvent } from '../../../shared/agent-hook-listener/provider-event-routing'
 import { parseLegacyNumericPaneKey, parsePaneKey } from '../../../shared/stable-pane-id'
+import type { AgentType } from '../../../shared/agent-status-types'
 import type { AgentHookSource } from '../../../shared/agent-hook-relay'
 import {
-  CLOSED_AGENT_STATUS_PANE_KEYS_MAX,
   CLOSED_AGENT_STATUS_TAB_IDS_MAX,
+  CLOSED_AGENT_STATUS_PANE_KEYS_MAX,
   RETIRED_PANE_FENCES_MAX
 } from './server-constants'
 import type { RetiredPaneAlias, RetiredPaneFence } from './server-types'
+import {
+  isFenceScopedSource,
+  isProviderSessionAnnouncement,
+  isProviderSessionUserTurn
+} from './server-status-identity'
 import { AgentHookServerStatusInference } from './server-status-inference'
 
 export abstract class AgentHookServerStatusDisposition extends AgentHookServerStatusInference {
+  /** The sanctioned session-change signals: a non-replay birth (SessionStart,
+   *  identity-only session_start) or OpenCode user-turn. Everything else is
+   *  content and may never supersede-land while a live session is known. */
+  private isLegitimateLiveSessionChange(event: {
+    isReplay?: boolean
+    source?: AgentHookSource
+    hookEventName?: string
+    providerSessionOnly?: boolean
+    hasExplicitPrompt?: boolean
+  }): boolean {
+    if (event.isReplay === true) {
+      return false
+    }
+    return isProviderSessionAnnouncement(event) || isProviderSessionUserTurn(event)
+  }
+
   protected markTabClosedForAgentStatus(tabId: string): void {
     // Delete-then-add keeps recently closed tabs most-recent so eviction sheds only the oldest ids.
     this.closedAgentStatusTabIds.delete(tabId)
@@ -35,6 +57,13 @@ export abstract class AgentHookServerStatusDisposition extends AgentHookServerSt
       isReplay?: boolean
       hasExplicitPrompt?: boolean
       launchToken?: string
+      /** Normalized provider session, when the ingress already has one. */
+      providerSession?: { id: string }
+      /** Identity-only marker (Pi-family session_start announcements). */
+      providerSessionOnly?: boolean
+      /** Normalized status payload, when the ingress already has one — feeds
+       *  the side-row fallback's agentType match. */
+      payload?: { agentType?: AgentType }
     }
   ): 'accept' | 'restart' | 'suppress' {
     const ownerPaneKey = this.resolvePaneKeyAlias(paneKey)
@@ -46,6 +75,39 @@ export abstract class AgentHookServerStatusDisposition extends AgentHookServerSt
       return 'suppress'
     }
     if (!paneRetired) {
+      // Why: the host's live PTY registry is the generation authority — an
+      // event whose launch token the pane's connected pty never minted is
+      // foreign to this pane's current process, so it must not land even as a
+      // first row. Fence-scoped sources only (the session fence's domain);
+      // unknown/tokenless registry answers prove nothing and stay admitted.
+      if (
+        event &&
+        isFenceScopedSource(event.source) &&
+        this.isForeignLaunchGeneration(ownerPaneKey, event.launchToken)
+      ) {
+        return 'suppress'
+      }
+      // Why: stale-session invariant — while the pane holds a valid authority
+      // or side-row evidence for session B, no content from another session
+      // may land just because no previous row exists (post-clear), live or
+      // replay. Legitimate non-replay announcements and user-turns still pass:
+      // they are the sanctioned session-change mechanism (authority moves on
+      // accept, resuming A for real stays possible), and registry-foreign
+      // births were suppressed above so a dead generation cannot revive.
+      if (
+        event &&
+        isFenceScopedSource(event.source) &&
+        !this.isLegitimateLiveSessionChange(event) &&
+        this.isSupersededProviderSession({
+          paneKey: ownerPaneKey,
+          source: event.source,
+          launchToken: event.launchToken,
+          providerSession: event.providerSession,
+          payload: event.payload
+        })
+      ) {
+        return 'suppress'
+      }
       const tokenFence = this.restartedStatusLaunchTokenHashByPaneKey.get(ownerPaneKey)
       // Why: deferred retirement lets a new process start in a still-authorized pane, so
       // its tokened SessionStart re-fences; prompts recur, so a stale process would win.
