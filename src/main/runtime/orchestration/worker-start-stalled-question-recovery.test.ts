@@ -398,6 +398,9 @@ describe('questions after an unobserved prompt stall', () => {
     })
     db.beginRemoteAttachmentStop('ctx_stop')
     expect(db.findActiveRemoteAttachmentForPane(PANE)).toBeUndefined()
+    // Occupancy holds until stop is confirmed: beginStop fences routing but does
+    // not prove the process exited, so a contender on this pane must wait.
+    db.settleRemoteAttachmentStop('ctx_stop')
 
     db.createRemoteDispatchAttachment({
       dispatchId: 'ctx_revoked',

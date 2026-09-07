@@ -577,7 +577,105 @@ describe('OpenCode worker transcript reads', () => {
     expect(done).toMatchObject({ ok: true, messages: [], limited: false })
   })
 
-  it('degrades legacy watermark pins instead of scanning the session', async () => {
+  it('serves cursor continuations with boundary evidence and a stable fingerprint', async () => {
+    const { db, path } = createTempDb()
+    applyOpenCodeSchema(db)
+    insertSession(db, 'ses_cursor', 1)
+    insertTextMessage(db, {
+      id: 'msg_1',
+      sessionId: 'ses_cursor',
+      role: 'user',
+      timeCreated: 10,
+      text: 'first'
+    })
+    insertTextMessage(db, {
+      id: 'msg_2',
+      sessionId: 'ses_cursor',
+      role: 'assistant',
+      timeCreated: 20,
+      text: 'second'
+    })
+    db.close()
+    const transcriptPath = buildOpenCodeSqliteCandidatePath(path, 'ses_cursor')
+
+    const initial = await readWorkerTranscript({
+      agent: 'opencode',
+      sessionId: 'ses_cursor',
+      transcriptPath
+    })
+    expect(initial).toMatchObject({ ok: true, nextOffset: 2, limited: false, clipping: [] })
+    if (!initial.ok) {
+      return
+    }
+    expect(initial.sourceFingerprint).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(initial.boundaryCheckpoint).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(initial.sourceDigest).toMatch(/^[A-Za-z0-9_-]+$/)
+
+    const continuation = await readWorkerTranscript({
+      agent: 'opencode',
+      sessionId: 'ses_cursor',
+      transcriptPath,
+      offset: initial.nextOffset,
+      expectedBoundaryCheckpoint: initial.boundaryCheckpoint,
+      expectedSourceFingerprint: initial.sourceFingerprint
+    })
+    expect(continuation).toMatchObject({
+      ok: true,
+      messages: [],
+      nextOffset: 2,
+      limited: false,
+      clipping: []
+    })
+    if (continuation.ok) {
+      expect(continuation.sourceFingerprint).toBe(initial.sourceFingerprint)
+      expect(continuation.boundaryCheckpoint).toBe(initial.boundaryCheckpoint)
+    }
+  })
+
+  it('rejects a mutated snapshot boundary as source_changed', async () => {
+    const { db, path } = createTempDb()
+    applyOpenCodeSchema(db)
+    insertSession(db, 'ses_mut', 1)
+    insertTextMessage(db, {
+      id: 'msg_1',
+      sessionId: 'ses_mut',
+      role: 'assistant',
+      timeCreated: 10,
+      text: 'original body'
+    })
+    db.close()
+    const transcriptPath = buildOpenCodeSqliteCandidatePath(path, 'ses_mut')
+
+    const initial = await readWorkerTranscript({
+      agent: 'opencode',
+      sessionId: 'ses_mut',
+      transcriptPath
+    })
+    expect(initial.ok).toBe(true)
+    if (!initial.ok) {
+      return
+    }
+
+    const reopened = new Database(path)
+    reopened.prepare('UPDATE message SET time_updated = ? WHERE id = ?').run(99, 'msg_1')
+    reopened
+      .prepare('UPDATE part SET data = ?, time_updated = ? WHERE id = ?')
+      .run(JSON.stringify({ type: 'text', text: 'rewritten body' }), 99, 'prt-msg_1')
+    reopened.close()
+
+    await expect(
+      readWorkerTranscript({
+        agent: 'opencode',
+        sessionId: 'ses_mut',
+        transcriptPath,
+        offset: initial.nextOffset,
+        expectedBoundaryCheckpoint: initial.boundaryCheckpoint,
+        expectedSourceFingerprint: initial.sourceFingerprint
+      })
+    ).resolves.toMatchObject({ ok: false, reason: 'source_changed' })
+  })
+
+  it('degrades stale pinned cursors instead of rescanning the session', async () => {
     const { db, path } = createTempDb()
     applyOpenCodeSchema(db)
     insertSession(db, 'ses_pin', 1)
@@ -595,16 +693,13 @@ describe('OpenCode worker transcript reads', () => {
         agent: 'opencode',
         sessionId: 'ses_pin',
         transcriptPath: buildOpenCodeSqliteCandidatePath(path, 'ses_pin'),
-        offset: 10,
-        endOffset: 10,
+        offset: 1,
+        expectedBoundaryCheckpoint: 'checkpoint_from_a_stale_archive_cursor',
         limit: 10
       })
     ).resolves.toMatchObject({
       ok: false,
-      reason: 'transcript_unreadable',
-      warnings: [
-        'Legacy pinned OpenCode sessions are not re-read by archive watermark; start a fresh worker-read without the archive cursor.'
-      ]
+      reason: 'source_changed'
     })
   })
 

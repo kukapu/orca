@@ -98,6 +98,7 @@ function statusFeed(): StructuredAgentSessionStatusFeed {
         {
           journal: {
             isReadOnly: false,
+            lastActivityAt: () => 2,
             snapshot: () => ({ items: STATUS_ITEMS })
           } as unknown as AgentSessionJournal,
           params: { location: { workspaceId: 'workspace-1' }, provider: 'codex' as const }
@@ -200,6 +201,10 @@ function dispatcher(runtimeOverrides: Record<string, unknown> = {}): RpcDispatch
         variable: params.agent === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME',
         path: params.agent === 'claude' ? '/host/.claude' : '/host/.codex'
       },
+      options:
+        params.agent === 'claude'
+          ? { model: 'opus', effort: 'high' }
+          : { model: 'gpt-5.6-sol', effort: 'medium' },
       runtimeKind: 'native'
     })),
     publishStructuredAgentSessionTab: vi.fn()
@@ -383,7 +388,7 @@ describe('capability gating', () => {
     }
     // Bump deliberately: the whole agentSession.* surface is behind the structured capability,
     // so an additive method is invisible to old clients and needs no protocol bump.
-    expect(STRUCTURED_AGENT_SESSION_METHODS).toHaveLength(19)
+    expect(STRUCTURED_AGENT_SESSION_METHODS).toHaveLength(21)
   })
 
   it('hides the surface from a declared client that did not advertise it', async () => {
@@ -482,7 +487,8 @@ describe('method routing', () => {
     expect(hostCalls.attach).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        accountHome: { variable: 'CODEX_HOME', path: '/host/.codex' }
+        accountHome: { variable: 'CODEX_HOME', path: '/host/.codex' },
+        options: { model: 'gpt-5.6-sol', effort: 'medium' }
       })
     )
     expect(hostCalls.attach.mock.calls[0]?.[1]).not.toHaveProperty('providerHandle')
@@ -727,6 +733,41 @@ describe('parameter validation', () => {
     })
   })
 
+  it('accepts the maximum fully encoded Claude choice group and retains a finite bound', async () => {
+    const maximumSelections = Array.from({ length: 4 }, (_, questionIndex) => ({
+      questionId: `q${questionIndex + 1}`,
+      optionIds: Array.from(
+        { length: 4 },
+        (_, optionIndex) => `q${questionIndex + 1}:choice-${optionIndex + 1}`
+      )
+    }))
+    const optionId = `question-group:${encodeURIComponent(JSON.stringify(maximumSelections))}`
+    expect(optionId.length).toBe(610)
+
+    const response = await call(
+      'agentSession.respondToQuestion',
+      {
+        envelope: envelope(),
+        itemId: 'item-1',
+        expectedRevision: 1,
+        optionId
+      },
+      STRUCTURED_CLIENT
+    )
+    expect(response).toMatchObject({ ok: true })
+    expect(hostCalls.respondToPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ optionId })
+    )
+
+    await rejects('agentSession.respondToQuestion', {
+      envelope: envelope(),
+      itemId: 'item-1',
+      expectedRevision: 1,
+      optionId: 'x'.repeat(1025)
+    })
+  })
+
   it('bounds a history page and validates its cursor', async () => {
     await rejects('agentSession.history', {
       sessionId: SESSION,
@@ -775,7 +816,8 @@ describe('agentSession.subscribeStatus', () => {
             workspaceId: 'workspace-1',
             agent: 'codex',
             status: 'working',
-            latestPrompt: 'write a poem'
+            latestPrompt: 'write a poem',
+            updatedAt: 2
           }
         ]
       }

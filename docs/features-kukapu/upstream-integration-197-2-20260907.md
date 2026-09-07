@@ -7,7 +7,9 @@ resolver conflictos y reconstruir el candidato 1.4.197-kukapu.2. No se autoriza
 push ni instalacion/reinicio de produccion. La instalacion la ejecutara el
 usuario desde una terminal fuera de Orca, con instrucciones y rollback.
 La mejora de compactacion de OpenCode queda como pendiente independiente.
-Los workers deben usar zai-coding-plan/glm-5.3 y conservar sus terminales.
+ULTIMA ORDEN (2026-09-07 08:13 UTC): queda poca cuota GLM5.3; usar
+`xai/grok-4.6` a partir de ahora. Ambos selectores cambiados in-place y footer
+Grok4.6 xAI high verificado, sin recrear terminales ni reiniciar el merge.
 
 ## Estado inicial
 
@@ -18,6 +20,36 @@ Los workers deben usar zai-coding-plan/glm-5.3 y conservar sus terminales.
   del 2026-09-07. Eso no actualizo el worktree principal.
 - Referencias remotas aun pendientes de actualizar mediante fetch; estos
   valores describen las referencias locales inspeccionadas, no un sondeo remoto.
+
+## Checkpoint Y Objetivos Fijados
+
+- Commit local de proteccion creado: `3c91f86317628ee2758745750a03adb4b09ab93e`.
+  168 archivos, hook normal completado (oxlint, React Doctor y oxfmt), arbol
+  limpio comprobado despues. No push. lint-staged creo y limpio su backup
+  automatico durante el hook; no se uso stash manual para trasladar el trabajo.
+- package.json recuperado byte a byte de ee2e5da315; la version de entrega se
+  inyecta por ORCA_LOCAL_BUILD_VERSION, no mediante un manifiesto truncado.
+- Fetch acotado completado: origin/main-kukapu sigue en
+  `8693b5a28e52f6c30b1be7905e9ba4c70942cfa7`; upstream/main avanzo a
+  `314506003a16297006225147fef8bdcec2186da8` (11 commits posteriores).
+- Merge de origin iniciado con `--no-commit --no-ff`: 25 paths en conflicto,
+  incluidos tres modify/delete por reorganizacion RPC. El merge de los 11
+  commits posteriores se hara despues de cerrar este primer paso.
+- Worker A: task_f71ceed62fad / ctx_241ae4cd035a, RPC/CLI y migracion de rutas.
+- Worker B inicial: task_c3f83ffb1ae9 / ctx_be0b660af015 entregado. Seguimiento
+  transcript task_08b17ec3d9f3 / ctx_562b47e7f5c1 entregado; ACTIVO
+  task_880619622f27 / ctx_a2bfb8a23709 para corregir ocupacion remota ante
+  stalled/stop sin confirmacion, en el mismo terminal. No dar el pane por libre
+  por un error ni por solicitar stop. Ambos workers Grok4.6 xAI, sin mutaciones Git.
+  Principal controla indice, commits, docs/config y gates de verificacion.
+- Primer typecheck diagnostico: 5 errores Node (3 en contratos de transcripcion
+  de B, 2 en RPC de A), no gate final. CLI/web sin errores en esa ejecucion.
+  No apps/builds mientras se estabiliza el merge ni atribuir fallos a otra
+  area antes de reproducir con la fuente congelada.
+- Segundo typecheck conjunto 08:26 UTC: Node/CLI/web exit 0. A debe cerrar
+  migracion y declarar code-ready; B debe cerrar el residual de ocupacion.
+  Pendiente prueba conjunta/revision, no merge commit todavia. Revisar ademas
+  el pin SQLite/sourceDigest frente al cursor nuevo de upstream (mensaje a A).
 
 ## Anomalia del manifiesto
 

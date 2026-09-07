@@ -21,8 +21,9 @@ export async function readOpenCodeWorkerTranscript(args: {
   sessionId: string
   transcriptPath?: string
   offset?: number
-  endOffset?: number
   limit?: number
+  /** Prior boundary evidence from the cursor owner; mismatch degrades to source_changed. */
+  expectedBoundaryCheckpoint?: string
 }): Promise<WorkerTranscriptReadResult> {
   const sessionId = args.sessionId.trim()
   if (!sessionId) {
@@ -52,8 +53,8 @@ export async function readOpenCodeWorkerTranscript(args: {
       source.filePath,
       sessionId,
       args.offset,
-      args.endOffset,
-      limit
+      limit,
+      args.expectedBoundaryCheckpoint
     )
     if (!page.ok) {
       return page
@@ -62,10 +63,13 @@ export async function readOpenCodeWorkerTranscript(args: {
     return {
       ok: true,
       filePath: source.filePath,
+      sourceFingerprint: page.sourceFingerprint,
+      boundaryCheckpoint: page.boundaryCheckpoint,
       messages: bounded.messages,
       nextOffset: page.nextOffset,
       ...(page.sourceDigest ? { sourceDigest: page.sourceDigest } : {}),
       limited: page.limited || bounded.limited,
+      clipping: [...page.clipping, ...(bounded.limited ? ['transcript_payload'] : [])],
       warnings: [...page.warnings, ...bounded.warnings]
     }
   } catch (error) {

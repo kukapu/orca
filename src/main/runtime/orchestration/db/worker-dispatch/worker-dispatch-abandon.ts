@@ -6,6 +6,8 @@ import {
 } from '../../context-only-dispatch-release'
 import type { OrchestrationDb } from '../orchestration-db'
 import { reconcileTaskAfterDispatchInterruption } from '../dispatch-context/task-dispatch-reconciliation'
+import { transitionLifecycleWithDb } from '../lifecycle-transition'
+import { isUnobservedPromptFailure } from './worker-dispatch-stop'
 
 export function abandonWorkerDispatch(
   this: OrchestrationDb,
@@ -45,28 +47,39 @@ export function abandonWorkerDispatch(
         `Dispatch ${dispatchId} is stopping; wait for worker-stop to settle before abandoning.`
       )
     }
+    if (worker.state === 'failed' && !isUnobservedPromptFailure(worker)) {
+      this.db.exec('COMMIT')
+      return { disposition: 'stale', worker }
+    }
+    if (worker.state === 'stopped') {
+      this.db.exec('COMMIT')
+      return { disposition: 'stale', worker }
+    }
     if (worker.state === 'succeeded') {
       throw new OrchestrationError(
         'dispatch_inactive',
         `Dispatch ${dispatchId} already succeeded and cannot be abandoned.`
       )
     }
-    this.db
-      .prepare(
-        `UPDATE worker_dispatches
-         SET state = 'abandoned', stage = 'abandoned', updated_at = datetime('now')
-         WHERE dispatch_id = ?`
-      )
-      .run(dispatchId)
-    this.db
-      .prepare(
-        `UPDATE dispatch_contexts
-         SET status = CASE WHEN status IN ('pending', 'dispatched') THEN 'failed' ELSE status END,
-             capability_revoked_at = COALESCE(capability_revoked_at, datetime('now')),
-             completed_at = COALESCE(completed_at, datetime('now'))
-         WHERE id = ?`
-      )
-      .run(dispatchId)
+    transitionLifecycleWithDb(this.db, {
+      entity: 'worker',
+      id: dispatchId,
+      from: worker.state,
+      to: 'abandoned',
+      projection: { stage: 'abandoned', updated_at: new Date().toISOString() }
+    })
+    if (['pending', 'dispatched'].includes(dispatch.status)) {
+      transitionLifecycleWithDb(this.db, {
+        entity: 'dispatch',
+        id: dispatchId,
+        from: dispatch.status,
+        to: 'failed',
+        projection: {
+          capability_revoked_at: dispatch.capability_revoked_at ?? new Date().toISOString(),
+          completed_at: dispatch.completed_at ?? new Date().toISOString()
+        }
+      })
+    }
     reconcileTaskAfterDispatchInterruption(this, dispatch.task_id, dispatchId)
     this.closeQuestionsForDispatch(dispatchId)
     this.db.exec('COMMIT')

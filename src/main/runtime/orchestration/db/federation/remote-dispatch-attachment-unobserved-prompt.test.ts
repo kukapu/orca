@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { OrchestrationDb } from '../orchestration-db'
 
 const WORKER_PANE_KEY = 'tab_worker:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const OTHER_PANE_KEY = 'tab_other:cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const LEGACY_PROTOCOL_VERSION = 2
 const CURRENT_PROTOCOL_VERSION = 3
 
@@ -15,7 +16,8 @@ describe('remote dispatch attachments after an unobserved prompt', () => {
 
   function createAttachment(
     dispatchId = 'ctx_stalled',
-    protocolVersion = CURRENT_PROTOCOL_VERSION
+    protocolVersion = CURRENT_PROTOCOL_VERSION,
+    paneKey = WORKER_PANE_KEY
   ) {
     db.createRemoteDispatchAttachment({
       dispatchId,
@@ -32,7 +34,7 @@ describe('remote dispatch attachments after an unobserved prompt', () => {
     })
     return db.prepareRemoteAttachmentAuthority({
       dispatchId,
-      paneKey: WORKER_PANE_KEY,
+      paneKey,
       processIncarnation: 'worker_runtime:pty:1',
       worktreeId: 'repo::worktree',
       terminalHandle: 'term_worker',
@@ -78,14 +80,19 @@ describe('remote dispatch attachments after an unobserved prompt', () => {
       })
     ).toBe(true)
 
-    const revokedCapability = createAttachment('ctx_revoked')
+    const revokedCapability = createAttachment(
+      'ctx_revoked',
+      CURRENT_PROTOCOL_VERSION,
+      OTHER_PANE_KEY
+    )
     db.failRemoteAttachment('ctx_revoked', 'agent_readiness', 'Agent did not become ready.', false)
     expect(db.getRemoteDispatchAttachment('ctx_revoked')?.capability_hash).toBeNull()
     expect(
       db.verifyRemoteAttachmentAuthority({
         dispatchId: 'ctx_revoked',
         capability: revokedCapability,
-        ...paneIdentity()
+        paneKey: OTHER_PANE_KEY,
+        processIncarnation: 'worker_runtime:pty:1'
       })
     ).toBe(false)
   })

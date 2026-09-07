@@ -1,4 +1,5 @@
 import type { TuiAgent } from '../../shared/tui-agent'
+import './agent-prompt-submission-runtime-test-mocks'
 import { OrcaRuntimeService } from './orca-runtime'
 import { makeStore } from './runtime-rpc-worktree-store-fixtures'
 

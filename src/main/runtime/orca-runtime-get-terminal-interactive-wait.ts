@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { resolveStructuredWorkerAuthority } from './structured-worker-authority'
 import { OrcaRuntimeWithAdoptTerminalOrphansFromInventory } from './orca-runtime-adopt-terminal-orphans-from-inventory'
 import type {
   RuntimeTerminalAgentStatus,
@@ -124,6 +125,13 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
   }
 
   getTerminalProcessIncarnation(handle: string): string | null {
+    const structured = resolveStructuredWorkerAuthority(
+      handle,
+      this.getOrchestrationDbIfAvailable?.() ?? null
+    )
+    if (structured) {
+      return structured.identity.processIncarnation
+    }
     const live = this.getLivePtyForHandle(handle)
     const record = live?.record ?? this.handles.get(handle)
     if (!record?.ptyId) {
@@ -142,6 +150,7 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
     processIncarnation: string
     connectionId: string | null | undefined
     launchToken: string | null | undefined
+    wslDistro?: string
   } | null {
     const paneKey = this.getTerminalPaneKey(handle)
     const processIncarnation = this.getTerminalProcessIncarnation(handle)
@@ -150,17 +159,23 @@ export class OrcaRuntimeWithGetTerminalInteractiveWait extends OrcaRuntimeWithAd
     }
     let connectionId: string | null | undefined
     let launchToken: string | null | undefined
+    let wslDistro: string | undefined
     try {
       const ptyId = this.getTerminalAgentStatusPtyId(handle)
       const pty = this.ptysById.get(ptyId)
       connectionId = pty?.connectionId ?? null
       launchToken = pty?.launchToken ?? null
+      // A WSL pane's PTY is local, so its hook events only match once the distro is supplied.
+      wslDistro = pty?.connectionId
+        ? undefined
+        : (this.wslDistroByPtyId.get(ptyId) ?? pty?.wslDistro ?? undefined)
     } catch {
       // Exact worker validation rejects this in production; test/legacy providers may not expose PTY metadata.
       connectionId = undefined
       launchToken = undefined
+      wslDistro = undefined
     }
-    return { paneKey, processIncarnation, connectionId, launchToken }
+    return { paneKey, processIncarnation, connectionId, launchToken, wslDistro }
   }
 
   getExactWorkerProviderSession(

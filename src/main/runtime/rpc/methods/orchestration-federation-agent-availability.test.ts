@@ -5,7 +5,7 @@ import { OrchestrationDb } from '../../orchestration/db'
 import type { OrchestrationEnvironmentTransport } from '../../orchestration/environment-transport'
 import { RpcDispatcher } from '../dispatcher'
 import { ORCHESTRATION_METHODS } from './orchestration'
-import { createFederationWorkerStartRequest as startRequest } from './orchestration-federation-test-request'
+import { createFederationWorkerStartRequest as startRequest } from './orchestration/federation/federation-request.test-support'
 
 /**
  * Split from orchestration-federation.test.ts to stay under the max-lines

@@ -183,4 +183,38 @@ describe('worker start settled by an unobserved prompt', () => {
     ).toThrow('agent_prompt_stalled')
     expect(db.getDispatchContext(taskId)?.id).toBe(dispatchId)
   })
+
+  it('rolls back every prompt-stall correction when the worker transition fails', () => {
+    db = new OrchestrationDb(':memory:')
+    const { taskId, dispatchId } = startWorker('atomic correction')
+    db.failWorkerStart(dispatchId, 'dispatch_input', 'agent_prompt_stalled', {
+      retainCapability: true
+    })
+    // The worker correction is the last of the three, so aborting it must undo the other two.
+    db.db.exec(`
+      CREATE TRIGGER reject_worker_prompt_stall_correction
+      BEFORE UPDATE ON worker_dispatches
+      WHEN NEW.state = 'succeeded'
+      BEGIN SELECT RAISE(ABORT, 'forced prompt-stall correction failure'); END;
+    `)
+
+    expect(() =>
+      db.settleWorkerReport({
+        taskId,
+        dispatchId,
+        outcome: 'succeeded',
+        result: 'uncommitted result'
+      })
+    ).toThrow('forced prompt-stall correction failure')
+    expect(db.getTask(taskId)).toMatchObject({ status: 'failed', result: null })
+    expect(db.getDispatchContextById(dispatchId)).toMatchObject({
+      status: 'failed',
+      last_failure: 'agent_prompt_stalled',
+      capability_revoked_at: null
+    })
+    expect(db.getWorkerDispatch(dispatchId)).toMatchObject({
+      state: 'failed',
+      stage: 'dispatch_input'
+    })
+  })
 })

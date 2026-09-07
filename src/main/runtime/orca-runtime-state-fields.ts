@@ -7,6 +7,7 @@ import type { RuntimeTerminalAgentStatusEvent } from './runtime-terminal-contrac
 import type { TerminalSideEffectBatch } from '../../shared/terminal-side-effect-facts'
 import type { AgentStatusIpcPayload } from '../../shared/agent-status-types'
 import type { WorkerObservedOptionsCandidateRow } from './orchestration/worker-observed-options'
+import type { ObservedAgentStatusPaneIdentity } from '../ipc/agent-status-ipc-boundary'
 import type { AgentHookAuthorityAttestation } from '../agent-hooks/server'
 import type {
   AiVaultPrepareSessionResumeArgs,
@@ -49,6 +50,9 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
       // terminal output. worktree.ps reads this at query time so mobile shows the
       // same inline agent rows the desktop sidebar does — same source, 1:1.
       getAgentStatusSnapshot?: () => AgentStatusIpcPayload[]
+      /** The identity the runtime resolved for a pane as each status arrived. Without it the
+       *  fleet path reminted cached rows against whatever the pane owns now. */
+      readObservedAgentStatusPaneIdentity?: (paneKey: string) => ObservedAgentStatusPaneIdentity
       /** Same rows, but including the resume-identity-only ones `getAgentStatusSnapshot`
        *  filters out so they can't read as running agents. Mobile native chat needs
        *  them: for an agent that publishes identity separately (Pi), that row is the
@@ -190,6 +194,8 @@ export class OrcaRuntimeWithStateFields extends OrcaRuntimeWithLinearCommands {
       this.stats = stats
     }
     this.getAgentStatusSnapshotFn = deps?.getAgentStatusSnapshot ?? null
+    this.readObservedAgentStatusPaneIdentityFn =
+      deps?.readObservedAgentStatusPaneIdentity ?? (() => ({ kind: 'unobserved' }))
     this.getAgentProviderSessionSnapshotFn =
       deps?.getAgentProviderSessionSnapshot ?? deps?.getAgentStatusSnapshot ?? null
     this.getAgentProviderSessionRowsForPaneFn = deps?.getAgentProviderSessionRowsForPane ?? null

@@ -19,6 +19,10 @@ import {
   supportsStructuredSessions
 } from './structured-agent-session-gate'
 import type { AgentSessionAttachParams } from '../../../native-chat/agent-session-wire/structured-agent-session-attach'
+import {
+  commitStructuredAgentSessionCreate,
+  prepareStructuredAgentSessionCreateForWorktree
+} from './structured-agent-session-create'
 import { STRUCTURED_AGENT_SESSION_HOLD_METHODS } from './structured-agent-session-hold'
 import { STRUCTURED_AGENT_SESSION_REVEAL_METHODS } from './structured-agent-session-reveal'
 import { resolveUncommittedStructuredCreate } from './structured-agent-session-precommit-refusal'
@@ -33,6 +37,7 @@ import {
 import {
   AttachParams,
   CancelParams,
+  ConversationCommandParams,
   CreateParams,
   CreateSupportParams,
   HistoryParams,
@@ -77,6 +82,27 @@ async function attachClientSuppliedLocation(
 
 export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
   defineMethod({
+    name: 'agentSession.conversationCommand',
+    params: ConversationCommandParams,
+    handler: async (params, ctx) => {
+      requireStructuredCapability(ctx)
+      await ensureHostInstalled(ctx)
+      const host = requireHost(ctx)
+      await host.revealSession(params.envelope.sessionId)
+      const result = await host.conversationCommand(callerFor(ctx), params)
+      if (result.ok && result.value.command === 'clear' && result.value.replacementSessionId) {
+        const replacement = host
+          .conversationReplacements()
+          .find((entry) => entry.sourceSessionId === params.envelope.sessionId)
+        if (replacement) {
+          await ctx.runtime.replaceStructuredAgentSessionTab(replacement)
+        }
+        await host.close(params.envelope.sessionId)
+      }
+      return result
+    }
+  }),
+  defineMethod({
     name: 'agentSession.createSupport',
     params: CreateSupportParams,
     handler: async (params, ctx) => {
@@ -107,35 +133,16 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
           if (conflict) {
             return { refusal: conflict }
           }
-          const resolved = await ctx.runtime.resolveStructuredAgentSessionCreateIntent(params)
-          const hostFingerprint = computeAgentSessionPayloadFingerprint({
-            method: 'agentSession.attach',
-            sessionId: params.envelope.sessionId,
-            fields: {
-              location: resolved.location,
-              provider: resolved.provider,
-              agent: resolved.agent,
-              accountHome: resolved.accountHome,
-              runtimeKind: resolved.runtimeKind,
-              expectedRuntimeFence: null
-            }
+          return prepareStructuredAgentSessionCreateForWorktree({
+            runtime: ctx.runtime,
+            ensureHost: async () => {
+              await ensureHostInstalled(ctx)
+              return requireHost(ctx)
+            },
+            envelope: params.envelope,
+            worktree: params.worktree,
+            agent: params.agent as 'claude' | 'codex'
           })
-          await ensureHostInstalled(ctx)
-          const { agent: _resolvedAgent, provider: _resolvedProvider, ...resolvedAttach } = resolved
-          const attachParams: AgentSessionAttachParams = {
-            ...resolvedAttach,
-            provider: resolved.provider as 'claude' | 'codex',
-            agent: resolved.agent as 'claude' | 'codex',
-            envelope: { ...params.envelope, payloadFingerprint: hostFingerprint }
-          }
-          return {
-            host: requireHost(ctx),
-            attachParams,
-            tab: {
-              workspaceId: resolved.location.workspaceId,
-              agent: resolved.agent as 'claude' | 'codex'
-            }
-          }
         }
         const { host, attachParams } = await resolveClientSuppliedAttach(params, ctx)
         return { host, attachParams, tab: null }
@@ -143,27 +150,12 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
       if ('refusal' in prepared) {
         return { ok: false, refusal: prepared.refusal }
       }
-      const result = await prepared.host.attach(callerFor(ctx), prepared.attachParams)
-      if (result.ok && prepared.tab) {
-        try {
-          await ctx.runtime.publishStructuredAgentSessionTab({
-            workspaceId: prepared.tab.workspaceId,
-            sessionId: result.value.sessionId,
-            agent: prepared.tab.agent,
-            activate: true
-          })
-        } catch (error) {
-          console.warn('[agent-session] create committed before tab publication failed', error)
-          return {
-            ok: false,
-            refusal: {
-              code: 'agent_session_operation_unknown',
-              message: 'The chat may have been created, but its tab could not be confirmed.'
-            }
-          }
-        }
-      }
-      return result
+      return commitStructuredAgentSessionCreate({
+        runtime: ctx.runtime,
+        caller: callerFor(ctx),
+        prepared,
+        activate: true
+      })
     }
   }),
   defineMethod({
@@ -227,6 +219,11 @@ export const STRUCTURED_AGENT_SESSION_METHODS: RpcAnyMethod[] = [
     name: 'agentSession.options',
     params: OptionsParams,
     handler: async (params, ctx) => requireHost(ctx).readOptions(params.sessionId)
+  }),
+  defineMethod({
+    name: 'agentSession.commands',
+    params: OptionsParams,
+    handler: async (params, ctx) => requireHost(ctx).readCommands(params.sessionId)
   }),
   defineMethod({
     name: 'agentSession.history',

@@ -1,4 +1,6 @@
 import type { NativeChatMessage } from '../../../shared/native-chat-types'
+import { statSync } from 'node:fs'
+import type { BigIntStats } from 'node:fs'
 import { asRecord, extractString } from '../../ai-vault/session-scanner-values'
 import { splitOpenCodeSqliteCandidate } from '../../ai-vault/session-scanner-opencode-sqlite-paths'
 import { readOpenCodeDatabase } from '../../ai-vault/session-scanner-opencode-sqlite-open'
@@ -7,13 +9,17 @@ import type SyncDatabase from '../../sqlite/sync-database'
 import { decodeOpenCodeWorkerMessage } from './worker-transcript-opencode-decode'
 import { workerTranscriptRecordWarnings } from './worker-transcript-page'
 import { buildOpenCodeSnapshot, type SqliteMessageRow } from './worker-transcript-opencode-snapshot'
+import {
+  createWorkerTranscriptBoundaryCheckpoint,
+  localWorkerTranscriptSourceIdentity
+} from './worker-transcript-source-identity'
 import type { WorkerTranscriptReadResult } from './worker-transcript-read'
 
-const LEGACY_WATERMARK_WARNING =
-  'Legacy pinned OpenCode sessions are not re-read by archive watermark; start a fresh worker-read without the archive cursor.'
 const OLDER_OMITTED_WARNING = 'Older transcript messages were omitted from the bounded snapshot.'
 const PARTS_BYTE_BUDGET_WARNING =
   'Some transcript parts were omitted to keep the snapshot byte budget.'
+const SOURCE_IDENTITY_WARNING =
+  'OpenCode storage did not expose a stable database file identity for cursor evidence.'
 
 // SQLite has no monotonic sequence, so pages come from a bounded tail snapshot read in one
 // coherent readonly transaction; the snapshot digest folds into the RPC sourceIdentity and any
@@ -23,21 +29,32 @@ export function readOpenCodeSqlitePage(
   filePath: string,
   sessionId: string,
   offset: number | undefined,
-  endOffset: number | undefined,
-  limit: number
+  limit: number,
+  expectedBoundaryCheckpoint?: string
 ): WorkerTranscriptReadResult {
   const sqlite = splitOpenCodeSqliteCandidate(filePath)
   if (!sqlite) {
     return { ok: false, reason: 'transcript_parse_failed', warnings: [] }
   }
-  if (endOffset !== undefined) {
-    return { ok: false, reason: 'transcript_unreadable', warnings: [LEGACY_WATERMARK_WARNING] }
+  // Snapshot cursors need the same stable file identity evidence as line transcripts; without
+  // dev/ino there is no honest sourceFingerprint to pin a cursor to.
+  const sourceIdentity = localWorkerTranscriptSourceIdentity(statDatabaseFile(sqlite.dbPath))
+  if (!sourceIdentity) {
+    return { ok: false, reason: 'transcript_unreadable', warnings: [SOURCE_IDENTITY_WARNING] }
   }
   return readOpenCodeDatabase({
     dbPath: sqlite.dbPath,
     read: (db) => {
       db.exec('BEGIN')
-      return pageOpenCodeSqlite(db, filePath, sessionId, offset, limit)
+      return pageOpenCodeSqlite(
+        db,
+        filePath,
+        sessionId,
+        offset,
+        limit,
+        sourceIdentity.fingerprint,
+        expectedBoundaryCheckpoint
+      )
     }
   })
 }
@@ -47,7 +64,9 @@ function pageOpenCodeSqlite(
   filePath: string,
   sessionId: string,
   offset: number | undefined,
-  limit: number
+  limit: number,
+  sourceFingerprint: string,
+  expectedBoundaryCheckpoint?: string
 ): WorkerTranscriptReadResult {
   if (!canPageOpenCodeSqlite(db)) {
     return { ok: false, reason: 'transcript_parse_failed', warnings: [] }
@@ -57,6 +76,12 @@ function pageOpenCodeSqlite(
     return { ok: false, reason: 'source_changed', warnings: [] }
   }
   const start = offset ?? 0
+  // Verify the boundary row identity before paging, mirroring the byte checkpoint the
+  // line-transcript readers verify before a forward scan.
+  const startCheckpoint = openCodeSnapshotBoundaryCheckpoint(snapshot.rows, start)
+  if (expectedBoundaryCheckpoint !== undefined && startCheckpoint !== expectedBoundaryCheckpoint) {
+    return { ok: false, reason: 'source_changed', warnings: [] }
+  }
   const end = Math.min(start + limit, snapshot.rows.length)
   const decoded = decodeSqliteRows(snapshot.rows.slice(start, end), snapshot.partsByMessage)
   const warnings = workerTranscriptRecordWarnings(
@@ -77,10 +102,20 @@ function pageOpenCodeSqlite(
   return {
     ok: true,
     filePath,
+    sourceFingerprint,
+    boundaryCheckpoint: openCodeSnapshotBoundaryCheckpoint(snapshot.rows, end),
     messages: decoded.messages,
     nextOffset: end,
     sourceDigest: snapshot.digest,
     limited: end < snapshot.rows.length,
+    clipping: [
+      ...(end < snapshot.rows.length || snapshot.olderOmitted
+        ? ['message_limit_or_scan_window']
+        : []),
+      ...(snapshot.partsOmittedCount > 0 || snapshot.partsBudgetExhausted
+        ? ['transcript_payload']
+        : [])
+    ],
     warnings
   }
 }
@@ -92,6 +127,24 @@ function canPageOpenCodeSqlite(db: SyncDatabase.Database): boolean {
     columnExists(db, 'message', 'time_created') &&
     columnExists(db, 'message', 'time_updated') &&
     columnExists(db, 'message', 'data')
+  )
+}
+
+function statDatabaseFile(dbPath: string): BigIntStats {
+  return statSync(dbPath, { bigint: true })
+}
+
+// The snapshot analogue of the line readers' 64 bytes before a byte offset: the identity of
+// the row immediately before the cursor index, hashed with the shared domain-separated
+// primitive. Appends after the boundary leave it stable; edits, reorders, or window eviction
+// that moves the boundary row change it and surface as source_changed.
+function openCodeSnapshotBoundaryCheckpoint(rows: SqliteMessageRow[], index: number): string {
+  const row = index > 0 ? rows[index - 1] : undefined
+  if (!row) {
+    return createWorkerTranscriptBoundaryCheckpoint(new Uint8Array(0))
+  }
+  return createWorkerTranscriptBoundaryCheckpoint(
+    Buffer.from(`${row.id}\0${row.time_created}\0${row.time_updated}\0${row.data}`, 'utf8')
   )
 }
 
