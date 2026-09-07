@@ -1,5 +1,9 @@
 # Integracion upstream para el candidato 197.2
 
+Checkpoint para retomar tras limpiar contexto:
+[continuar-upstream-197-2.md](./continuar-upstream-197-2.md).
+Consultar primero ese estado y reconciliarlo con el Run antes de repetir acciones.
+
 ## Autorizacion
 
 El usuario aprueba un commit LOCAL de proteccion antes de integrar upstream,
@@ -15,7 +19,20 @@ simulados no hacen llamadas LLM; el modelo corresponde al worker que los opera.
 Cualquier prueba de un proveedor real conserva su modelo especifico y requiere
 un gate separado. Esta orden sustituye Grok para el trabajo rutinario restante.
 
-## Estado Actual Tras Reanudacion
+## Estado Reconciliado 2026-09-07
+
+- Candidato production compilado y empaquetado por Core sobre `42ab555177`;
+  pack `ctx_ab0df039ab27` termino a las 10:19:47Z durante la pausa.
+  Se conserva en `dist/release-1.4.197-kukapu.2-20260907/`, no en el directorio
+  de ayer. Al retomar no se repitio ninguna compilacion ni empaquetado.
+- Informe vigente: [entrega fechada](./release-delivery-197-2-20260907.md).
+  Hashes, metadatos y ASAR contrastados; preflight del instalador exit 0 sin
+  mutaciones. [Smoke del artefacto](./artifact-smoke-197-2-20260907.md) aceptado
+  tras revision del coordinador; entrega externa preparada, no instalacion ni push.
+- Tasks y handles actuales estan en el checkpoint enlazado arriba. Los estados
+  de diagnostico que siguen son historicos y no autorizan relanzar esos workers.
+
+## Historial De Reanudacion Y E2E
 
 - Recheck posterior a los ajustes de fixtures: simulado1/1 y web4/4 PASSED.
   `ask --json` devolvia envelope `{ok,result}` y el fake leia campos en el tope:
@@ -52,6 +69,56 @@ un gate separado. Esta orden sustituye Grok para el trabajo rutinario restante.
   del 2026-09-07. Eso no actualizo el worktree principal.
 - Referencias remotas aun pendientes de actualizar mediante fetch; estos
   valores describen las referencias locales inspeccionadas, no un sondeo remoto.
+
+## Historial De Checkpoint Y Objetivos
+
+- Primer merge REGISTRADO: `dfc86dbbc3787d43c447e7c5f90939c27a1afa03`, padres
+  checkpoint3c91f86317 y automatizacion8693b5a28e. Verificacion4080tests/10skip,
+  Node/CLI/web0 y calidad0; hook normal completado, sin push.
+- Segundo merge EN CURSO contra314506003a. Unico conflicto textual: lockfile de
+  node-pty1.1.0; hash del parche combinado
+  `5fc60ea713076145980604fa741bdcc42bfc31386f7410a97d25bc9ba03040d7`, coherente
+  en patchedDependencies/importer/snapshot. No es windows-process-tree.
+  Parseo unified diff y tests de parche verificados; apply contra tarball
+  pristino no disponible, no se ha descargado ni instalado nada.
+- Ultima bateria ampliada, tras adaptar las dos fixtures:822files verdes y1skip,
+  8533tests verdes/20skip; Node/CLI/web0. B task_28c8f27fa280/ctx_9d28ebb24597
+  terminado: se ejecuta scope real en fixture y se habilita el ajuste experimental
+  explicito para probar adoption replay; no se debilitan guards de producto.
+- A activo task_be1075949e3b / ctx_0b1b7cb1599f endurece instalador EXTERNO
+  persistente (transaccion/coherencia/lock/stagedhash y tests sin efectos),
+  tras revision inicial. Nunca ejecutar instalacion desdeOrca.
+  Ningun worker puede stagear/commitear. Ambos Grok4.6 xAI.
+
+### Historial Del Primer Merge
+
+- Commit local de proteccion creado: `3c91f86317628ee2758745750a03adb4b09ab93e`.
+  168 archivos, hook normal completado (oxlint, React Doctor y oxfmt), arbol
+  limpio comprobado despues. No push. lint-staged creo y limpio su backup
+  automatico durante el hook; no se uso stash manual para trasladar el trabajo.
+- package.json recuperado byte a byte de ee2e5da315; la version de entrega se
+  inyecta por ORCA_LOCAL_BUILD_VERSION, no mediante un manifiesto truncado.
+- Fetch acotado completado: origin/main-kukapu sigue en
+  `8693b5a28e52f6c30b1be7905e9ba4c70942cfa7`; upstream/main avanzo a
+  `314506003a16297006225147fef8bdcec2186da8` (11 commits posteriores).
+- Merge de origin iniciado con `--no-commit --no-ff`: 25 paths en conflicto,
+  incluidos tres modify/delete por reorganizacion RPC. El merge de los 11
+  commits posteriores se hara despues de cerrar este primer paso.
+- Worker A: task_f71ceed62fad / ctx_241ae4cd035a, RPC/CLI y migracion de rutas.
+- Worker B inicial: task_c3f83ffb1ae9 / ctx_be0b660af015 entregado. Seguimiento
+  transcript task_08b17ec3d9f3 / ctx_562b47e7f5c1 entregado; ACTIVO
+  task_880619622f27 / ctx_a2bfb8a23709 para corregir ocupacion remota ante
+  stalled/stop sin confirmacion, en el mismo terminal. No dar el pane por libre
+  por un error ni por solicitar stop. Ambos workers Grok4.6 xAI, sin mutaciones Git.
+  Principal controla indice, commits, docs/config y gates de verificacion.
+- Primer typecheck diagnostico: 5 errores Node (3 en contratos de transcripcion
+  de B, 2 en RPC de A), no gate final. CLI/web sin errores en esa ejecucion.
+  No apps/builds mientras se estabiliza el merge ni atribuir fallos a otra
+  area antes de reproducir con la fuente congelada.
+- Segundo typecheck conjunto 08:26 UTC: Node/CLI/web exit 0. A debe cerrar
+  migracion y declarar code-ready; B debe cerrar el residual de ocupacion.
+  Pendiente prueba conjunta/revision, no merge commit todavia. Revisar ademas
+  el pin SQLite/sourceDigest frente al cursor nuevo de upstream (mensaje a A).
 
 ## Anomalia del manifiesto
 

@@ -7,7 +7,12 @@ de `kukapu/orca`, en paralelo al desarrollo oficial de Orca.
 
 | Iniciativa                                                   | Estado                                                               | Release objetivo                 |
 | ------------------------------------------------------------ | -------------------------------------------------------------------- | -------------------------------- |
-| [Orquestacion OpenCode y Pi](./opencode-pi-orchestration.md) | Primer bloque de fiabilidad implementado y verificado; sin desplegar | `1.4.197-kukapu.2` (planificada) |
+| [Orquestacion OpenCode y Pi](./opencode-pi-orchestration.md) | Candidato post-upstream verificado; instalacion externa pendiente | `1.4.197-kukapu.2` |
+
+Entrega vigente: [candidato fechado 2026-09-07](./release-delivery-197-2-20260907.md),
+[smoke del artefacto](./artifact-smoke-197-2-20260907.md) y
+[checkpoint del Run](./continuar-upstream-197-2.md). No confundir el paquete
+fechado con el del dia 6 ni la entrega con una instalacion en produccion.
 
 ## Convenciones
 
@@ -28,6 +33,6 @@ de `kukapu/orca`, en paralelo al desarrollo oficial de Orca.
 - [Build y despliegue del fork](./local-build-deployment.md).
 - [Historial de releases](../releases/README.md).
 
-La proxima revision prevista sigue la convencion existente `v1.4.197-kukapu.2.md`
-para el documento de release y `1.4.197-kukapu.2` para la version de la aplicacion.
-Planificar una release no significa que este compilada, instalada ni verificada.
+La convencion es `v1.4.197-kukapu.2.md` para el documento de release y
+`1.4.197-kukapu.2` para la version de la aplicacion. El indice enlazado distingue
+planificacion, compilacion, verificacion e instalacion.
