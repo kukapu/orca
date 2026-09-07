@@ -23,6 +23,26 @@ Grok4.6 xAI high verificado, sin recrear terminales ni reiniciar el merge.
 
 ## Checkpoint Y Objetivos Fijados
 
+- Primer merge REGISTRADO: `dfc86dbbc3787d43c447e7c5f90939c27a1afa03`, padres
+  checkpoint3c91f86317 y automatizacion8693b5a28e. Verificacion4080tests/10skip,
+  Node/CLI/web0 y calidad0; hook normal completado, sin push.
+- Segundo merge EN CURSO contra314506003a. Unico conflicto textual: lockfile de
+  node-pty1.1.0; hash del parche combinado
+  `5fc60ea713076145980604fa741bdcc42bfc31386f7410a97d25bc9ba03040d7`, coherente
+  en patchedDependencies/importer/snapshot. No es windows-process-tree.
+  Parseo unified diff y tests de parche verificados; apply contra tarball
+  pristino no disponible, no se ha descargado ni instalado nada.
+- Ultima bateria ampliada, tras adaptar las dos fixtures:822files verdes y1skip,
+  8533tests verdes/20skip; Node/CLI/web0. B task_28c8f27fa280/ctx_9d28ebb24597
+  terminado: se ejecuta scope real en fixture y se habilita el ajuste experimental
+  explicito para probar adoption replay; no se debilitan guards de producto.
+- A activo task_be1075949e3b / ctx_0b1b7cb1599f endurece instalador EXTERNO
+  persistente (transaccion/coherencia/lock/stagedhash y tests sin efectos),
+  tras revision inicial. Nunca ejecutar instalacion desdeOrca.
+  Ningun worker puede stagear/commitear. Ambos Grok4.6 xAI.
+
+### Historial Del Primer Merge
+
 - Commit local de proteccion creado: `3c91f86317628ee2758745750a03adb4b09ab93e`.
   168 archivos, hook normal completado (oxlint, React Doctor y oxfmt), arbol
   limpio comprobado despues. No push. lint-staged creo y limpio su backup

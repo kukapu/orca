@@ -9,9 +9,10 @@ type ExactWorkerProviderSessionHost = {
   getExactWorkerProviderSession: (handle: string, observedAfter: number) => unknown
 }
 
-/** Drives the shipping method, not the selector helper: the wiring is what regressed. */
+/** Drives the shipping method through the real prototype so scope fencing runs. */
 function selectThroughRuntime(statusConnectionId: string | null): unknown {
-  const runtime = {
+  const proto = OrcaRuntimeWithGetTerminalInteractiveWait.prototype
+  const runtime = Object.assign(Object.create(proto), {
     getTerminalPaneKey: () => PANE_KEY,
     getTerminalProcessIncarnation: () => 'pty-wsl:inc-1',
     getTerminalAgentStatusPtyId: () => PTY_ID,
@@ -29,10 +30,8 @@ function selectThroughRuntime(statusConnectionId: string | null): unknown {
         providerSession: { key: 'session_id', id: 's1', transcriptPath: '/t.jsonl' }
       }
     ]
-  }
-  return (
-    OrcaRuntimeWithGetTerminalInteractiveWait.prototype as unknown as ExactWorkerProviderSessionHost
-  ).getExactWorkerProviderSession.call(runtime as never, 'term_wsl', 0)
+  }) as ExactWorkerProviderSessionHost
+  return runtime.getExactWorkerProviderSession('term_wsl', 0)
 }
 
 describe('exact worker provider session wiring', () => {
