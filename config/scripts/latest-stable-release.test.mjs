@@ -58,6 +58,23 @@ describe('latestStableDesktopReleaseTag', () => {
       ])
     ).toBe('')
   })
+
+  it.each(['draft', 'isDraft', 'prerelease', 'isPrerelease'])(
+    'excludes %s for REST and gh tag aliases',
+    (flag) => {
+      expect(
+        latestStableDesktopReleaseTag([
+          { tag_name: 'v9.0.0', [flag]: true },
+          { tagName: 'v8.0.0', [flag]: true },
+          { tagName: 'v1.4.197', isDraft: false, isPrerelease: false }
+        ])
+      ).toBe('v1.4.197')
+    }
+  )
+
+  it('returns empty for an empty release list', () => {
+    expect(latestStableDesktopReleaseTag([])).toBe('')
+  })
 })
 
 describe('fetchReleases', () => {

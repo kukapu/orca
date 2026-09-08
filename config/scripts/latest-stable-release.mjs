@@ -21,7 +21,13 @@ export function parseDesktopStableTag(tag) {
 
 export function latestStableDesktopReleaseTag(releases) {
   const stableTags = releases
-    .filter((release) => release?.draft !== true)
+    .filter(
+      (release) =>
+        release?.draft !== true &&
+        release?.isDraft !== true &&
+        release?.prerelease !== true &&
+        release?.isPrerelease !== true
+    )
     .map((release) => parseDesktopStableTag(release?.tag_name ?? release?.tagName ?? ''))
     .filter(Boolean)
     .sort((a, b) => a.major - b.major || a.minor - b.minor || a.patch - b.patch)

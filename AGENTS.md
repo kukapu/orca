@@ -5,7 +5,8 @@ For project orchestration, environments, model recovery, and delivery, start wit
 the version-matched skills and CLI help; they do not replace execution-safety rules below.
 
 For this fork, `main-kukapu` is the primary branch and tracks `origin/main-kukapu`.
-Use `upstream/main` only as the official update source. Before automated sync,
+Use exact stable upstream release tags as the automated update source, not
+the moving `upstream/main` tip. Before automated sync,
 follow [`docs/reference/upstream-sync-automation.md`](./docs/reference/upstream-sync-automation.md).
 
 # Design System
