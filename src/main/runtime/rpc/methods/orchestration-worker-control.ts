@@ -203,7 +203,11 @@ export const ORCHESTRATION_WORKER_CONTROL_METHODS: RpcMethod[] = [
         )
       }
       const resource = db.getWorkerTerminalResourceByOwner(params.dispatch)
-      if (resource && ['releasing', 'unknown', 'released'].includes(resource.release_state)) {
+      if (
+        resource &&
+        (['releasing', 'unknown', 'released'].includes(resource.release_state) ||
+          db.getWorkerTerminalArchive(params.dispatch)?.kind === 'structured_journal')
+      ) {
         return readArchivedWorkerOutput({
           db,
           dispatchId: params.dispatch,

@@ -39,6 +39,23 @@ function greatestTag(tags) {
   return latestStableDesktopReleaseTag(tags.map((tag_name) => ({ tag_name })))
 }
 
+function validOid(value) {
+  return typeof value === 'string' && /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(value)
+}
+
+function forkTag(value) {
+  const match =
+    typeof value === 'string' && /^(v[0-9]+\.[0-9]+\.[0-9]+)-kukapu\.([1-9][0-9]*)$/.exec(value)
+  return match && stableTag(match[1]) ? match : null
+}
+
+function newerSource(left, right) {
+  if (left.upstreamTag !== right.upstreamTag) {
+    return greatestTag([left.upstreamTag, right.upstreamTag]) === left.upstreamTag
+  }
+  return BigInt(forkTag(left.sourceTag)[2]) > BigInt(forkTag(right.sourceTag)[2])
+}
+
 function isDraft(release) {
   return release.draft === true || release.isDraft === true
 }
@@ -102,10 +119,23 @@ function preparation(comment) {
       !value ||
       !stableTag(value.upstreamTag) ||
       !STATES.has(value.state) ||
-      (value.upstreamOid !== undefined &&
-        (typeof value.upstreamOid !== 'string' ||
-          !/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(value.upstreamOid))) ||
+      (value.upstreamOid !== undefined && !validOid(value.upstreamOid)) ||
+      (value.sourceCommit !== undefined && !validOid(value.sourceCommit)) ||
+      (value.publicationCommit !== undefined && !validOid(value.publicationCommit)) ||
+      (value.sourceTag !== undefined && forkTag(value.sourceTag)?.[1] !== value.upstreamTag) ||
+      (value.forkVersion !== undefined && value.sourceTag !== `v${value.forkVersion}`) ||
       (value.reason !== undefined && typeof value.reason !== 'string')
+    ) {
+      return null
+    }
+    if (
+      (value.state === 'prepared' || value.state === 'published') &&
+      (!validOid(value.upstreamOid) ||
+        !validOid(value.sourceCommit) ||
+        !forkTag(value.sourceTag) ||
+        typeof value.forkVersion !== 'string' ||
+        value.sourceTag !== `v${value.forkVersion}` ||
+        (value.state === 'published' && !validOid(value.publicationCommit)))
     ) {
       return null
     }
@@ -150,6 +180,8 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
     }
 
     const tags = [baselineTag]
+    const sources = new Map()
+    let source
     let pending = false
     for (const worktree of result.worktrees) {
       if (worktree.automationProvenance?.automationId !== automationId) {
@@ -162,6 +194,25 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
       if (marker.state === 'preparing' || marker.state === 'blocked') {
         pending = true
       } else {
+        const previous = sources.get(marker.sourceTag)
+        if (
+          previous &&
+          (previous.sourceCommit.toLowerCase() !== marker.sourceCommit.toLowerCase() ||
+            previous.upstreamOid.toLowerCase() !== marker.upstreamOid.toLowerCase() ||
+            (previous.publicationCommit &&
+              marker.publicationCommit &&
+              previous.publicationCommit.toLowerCase() !== marker.publicationCommit.toLowerCase()))
+        ) {
+          return { launch: false, reason: 'reconcile-legacy', upstreamTag }
+        }
+        sources.set(marker.sourceTag, previous?.publicationCommit ? previous : marker)
+        if (
+          !source ||
+          newerSource(marker, source) ||
+          (marker.sourceTag === source.sourceTag && marker.publicationCommit)
+        ) {
+          source = marker
+        }
         tags.push(marker.upstreamTag)
       }
     }
@@ -170,10 +221,10 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
     }
 
     let sameDraft = false
+    let unknownLineage = false
     for (const release of fork) {
-      const match = /^(v[0-9]+\.[0-9]+\.[0-9]+)-kukapu\.[0-9]+$/.exec(
-        release.tag_name ?? release.tagName
-      )
+      const tag = release.tag_name ?? release.tagName
+      const match = /^(v[0-9]+\.[0-9]+\.[0-9]+)-kukapu\.[0-9]+$/.exec(tag)
       if (!match) {
         continue
       }
@@ -185,19 +236,45 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
           sameDraft = true
         }
       } else if (!isPrerelease(release)) {
-        tags.push(match[1])
+        if (
+          !sources.has(tag) &&
+          (!source ||
+            !forkTag(tag) ||
+            newerSource({ upstreamTag: match[1], sourceTag: tag }, source))
+        ) {
+          unknownLineage = true
+        }
       }
     }
     const highwaterTag = greatestTag(tags)
-    const context = { upstreamTag, highwaterTag }
+    const context = {
+      upstreamTag,
+      highwaterTag,
+      ...(source
+        ? {
+            sourceUpstreamTag: source.upstreamTag,
+            sourceUpstreamOid: source.upstreamOid,
+            sourceTag: source.sourceTag,
+            sourceCommit: source.sourceCommit,
+            forkVersion: source.forkVersion,
+            ...(source.publicationCommit ? { publicationCommit: source.publicationCommit } : {})
+          }
+        : {})
+    }
     if (!upstreamTag) {
       return { launch: false, reason: 'no-stable-release', ...context }
     }
     if (sameDraft) {
       return { launch: false, reason: 'fork-draft-exists', ...context }
     }
+    if (unknownLineage) {
+      return { launch: false, reason: 'unknown-source-lineage', ...context }
+    }
     if (greatestTag([upstreamTag, highwaterTag]) === highwaterTag) {
       return { launch: false, reason: 'already-covered', ...context }
+    }
+    if (!source || greatestTag([source.upstreamTag, baselineTag]) !== source.upstreamTag) {
+      return { launch: false, reason: 'canonical-source-required', ...context }
     }
     return { launch: true, reason: 'new-stable-release', ...context }
   } catch (error) {

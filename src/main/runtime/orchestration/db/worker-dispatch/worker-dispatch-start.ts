@@ -5,7 +5,7 @@ import { CURRENT_CONTRACT_VERSION } from '../contract-constants'
 import { generateId } from '../generated-id'
 import type { OrchestrationDb } from '../orchestration-db'
 import { insertStartingDispatchContextRow } from '../dispatch-row-writer'
-import type { DispatchCreator } from '../dispatch-depth'
+import { recordedCreatorIdentity, type DispatchCreator } from '../dispatch-depth'
 import { taskNotFoundError, taskNotStartableError } from '../../task-dispatch-refusal'
 import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-verification'
 
@@ -125,7 +125,10 @@ export function createStartingWorkerDispatch(
       taskId: task.id,
       contractVersion: CURRENT_CONTRACT_VERSION,
       launchTokenHash: params.launchTokenHash ?? null,
-      depth: this.resolveChildDispatchDepth(params.creator, params.maxDepth)
+      depth: this.resolveChildDispatchDepth(params.creator, params.maxDepth),
+      retryOfDispatchId: params.retryOf ?? null,
+      creatorDispatchId: this.resolveCreatorDispatchId(params.creator),
+      ...recordedCreatorIdentity(params.creator)
     })
     this.db
       .prepare(

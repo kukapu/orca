@@ -1,4 +1,5 @@
 import type { WorkerDispatchState } from './types'
+import { isPersistedStructuredWorkerIdentity } from './persisted-structured-worker-identity'
 
 export type WorkerTerminalOwnershipState =
   | 'owned'
@@ -63,9 +64,24 @@ export type WorkerDispatchListState = WorkerDispatchState | 'unsupervised'
 export type WorkerTerminalArchiveRow = {
   dispatch_id: string
   resource_id: string
-  kind: 'transcript_pin' | 'terminal_tail'
+  kind: 'transcript_pin' | 'terminal_tail' | 'structured_journal'
   content: string
   created_at: string
+}
+
+export function isPersistedStructuredWorkerResource(
+  resource: WorkerTerminalResourceRow,
+  archive?: WorkerTerminalArchiveRow
+): boolean {
+  return (
+    isPersistedStructuredWorkerIdentity(
+      resource.process_incarnation,
+      resource.terminal_handle,
+      resource.pane_key
+    ) ||
+    resource.archive_source === 'structured_journal' ||
+    archive?.kind === 'structured_journal'
+  )
 }
 
 export const WORKER_SETTLED_STATES: readonly WorkerDispatchState[] = [

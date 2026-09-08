@@ -7,6 +7,13 @@ vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }))
 
 const OPTIONS = { automationId: 'automation-1', repoId: 'repo-1', baselineTag: 'v1.4.197' }
 const LATEST = 'v1.4.198'
+const provenance = (upstreamTag = LATEST, revision = 1) => ({
+  upstreamTag,
+  upstreamOid: 'a'.repeat(40),
+  sourceTag: `${upstreamTag}-kukapu.${revision}`,
+  sourceCommit: 'c'.repeat(40),
+  forkVersion: `${upstreamTag.slice(1)}-kukapu.${revision}`
+})
 const release = (tag_name, flags = {}) => ({ tag_name, draft: false, prerelease: false, ...flags })
 const fullPage = Array.from({ length: 100 }, (_, i) => release(`mobile-v0.0.${i}`))
 const envelope = (worktrees = [], overrides = {}) => ({
@@ -23,11 +30,19 @@ const worktree = (state, upstreamTag = LATEST, overrides = {}) => ({
   id: 'worktree-1',
   createdAt: 1,
   automationProvenance: { automationId: OPTIONS.automationId },
-  comment: `orca-release-preparation:${JSON.stringify({ upstreamTag, state })}\nEvidence follows`,
+  comment: `orca-release-preparation:${JSON.stringify({
+    ...(state === 'prepared' || state === 'published' ? provenance(upstreamTag) : { upstreamTag }),
+    ...(state === 'published' ? { publicationCommit: 'd'.repeat(40) } : {}),
+    state
+  })}\nEvidence follows`,
   ...overrides
 })
 
-function mockRun({ official = [[release(LATEST)]], fork = [[]], listing = envelope() } = {}) {
+function mockRun({
+  official = [[release(LATEST)]],
+  fork = [[]],
+  listing = envelope([worktree('published', OPTIONS.baselineTag)])
+} = {}) {
   return vi.fn(async (command, args) => {
     if (command === 'orca') {
       return JSON.stringify(listing)
@@ -62,7 +77,13 @@ describe('runUpstreamReleasePrecheck', () => {
       launch: true,
       reason: 'new-stable-release',
       upstreamTag: 'v1.4.199',
-      highwaterTag: OPTIONS.baselineTag
+      highwaterTag: OPTIONS.baselineTag,
+      sourceTag: `${OPTIONS.baselineTag}-kukapu.1`,
+      sourceCommit: 'c'.repeat(40),
+      forkVersion: '1.4.197-kukapu.1',
+      sourceUpstreamTag: OPTIONS.baselineTag,
+      sourceUpstreamOid: 'a'.repeat(40),
+      publicationCommit: 'd'.repeat(40)
     })
     expect(run.mock.calls.map(([command, args]) => [command, args])).toEqual([
       [
@@ -125,7 +146,8 @@ describe('runUpstreamReleasePrecheck', () => {
     const ninePages = Array.from({ length: 9 }, () => fullPage)
     const run = mockRun({
       official: [...ninePages, [release('v1.10.0'), release('v1.9.999')]],
-      fork: [...ninePages, [release('v1.9.999-kukapu.2')]]
+      fork: [...ninePages, [release('v1.9.999-kukapu.1')]],
+      listing: envelope([worktree('published', 'v1.9.999')])
     })
     expect(await runUpstreamReleasePrecheck(OPTIONS, run)).toMatchObject({
       launch: true,
@@ -249,7 +271,7 @@ describe('runUpstreamReleasePrecheck', () => {
   it('allows a newer release after an older preparation and ignores other automations', async () => {
     const run = mockRun({
       listing: envelope([
-        worktree('prepared', 'v1.4.190'),
+        worktree('prepared', OPTIONS.baselineTag),
         worktree('blocked', LATEST, {
           automationProvenance: { automationId: 'another' },
           comment: ''
@@ -273,10 +295,22 @@ describe('runUpstreamReleasePrecheck', () => {
       { state: null },
       { upstreamTag: 'main' },
       { upstreamOid: 'bad' },
+      { upstreamOid: undefined },
+      { sourceTag: undefined },
+      { sourceCommit: undefined },
+      { forkVersion: undefined },
+      { sourceTag: 'v1.4.199-kukapu.1' },
+      { forkVersion: '1.4.198-kukapu.2' },
+      { sourceTag: 'v1.4.198-kukapu.0', forkVersion: '1.4.198-kukapu.0' },
+      { sourceCommit: 'c'.repeat(39) },
+      { sourceCommit: 123 },
+      { publicationCommit: 'not-an-oid' },
+      { publicationCommit: null },
+      { state: 'published', publicationCommit: undefined },
       { reason: {} }
     ].map(
       (extra) =>
-        `orca-release-preparation:${JSON.stringify({ upstreamTag: LATEST, state: 'prepared', ...extra })}`
+        `orca-release-preparation:${JSON.stringify({ ...provenance(), state: 'prepared', ...extra })}`
     )
   ])('requires reconciliation of legacy/invalid comments (%j)', async (comment) => {
     const run = mockRun({
@@ -314,13 +348,13 @@ describe('runUpstreamReleasePrecheck', () => {
   })
 
   it.each([`${LATEST}-kukapu.1`, 'v1.5.0-kukapu.2'])(
-    'uses published fork %s as highwater',
+    'blocks uninventoried published fork %s without certifying its highwater',
     async (tag) => {
       const run = mockRun({ fork: [[release(tag)]] })
       expect(await runUpstreamReleasePrecheck(OPTIONS, run)).toMatchObject({
         launch: false,
-        reason: 'already-covered',
-        highwaterTag: tag.split('-kukapu.')[0]
+        reason: 'unknown-source-lineage',
+        highwaterTag: OPTIONS.baselineTag
       })
     }
   )
@@ -366,6 +400,107 @@ describe('runUpstreamReleasePrecheck', () => {
       vi.fn(() => 'SECRET not JSON')
     )
     expect(result).toEqual({ launch: false, reason: 'unverifiable', upstreamTag: '', error: true })
+  })
+
+  it.each([[], [worktree('prepared', 'v1.4.190')]])(
+    'does not bootstrap from a baseline or obsolete source (%j)',
+    async (...worktrees) => {
+      expect(
+        await runUpstreamReleasePrecheck(OPTIONS, mockRun({ listing: envelope(worktrees) }))
+      ).toMatchObject({ launch: false, reason: 'canonical-source-required' })
+    }
+  )
+
+  it.each(['prepared', 'published'])(
+    'reconciles %s legacy markers lacking provenance',
+    async (state) => {
+      const comment = `orca-release-preparation:${JSON.stringify({ upstreamTag: LATEST, state })}`
+      expect(
+        await runUpstreamReleasePrecheck(
+          OPTIONS,
+          mockRun({ listing: envelope([worktree(state, LATEST, { comment })]) })
+        )
+      ).toMatchObject({ launch: false, reason: 'reconcile-legacy' })
+    }
+  )
+
+  it('selects the maximum canonical source numerically, not publication or inventory order', async () => {
+    const source = {
+      ...provenance(LATEST, 10),
+      sourceCommit: 'C'.repeat(64),
+      upstreamOid: 'A'.repeat(64)
+    }
+    const comment = `orca-release-preparation:${JSON.stringify({ ...source, state: 'prepared' })}`
+    const result = await runUpstreamReleasePrecheck(
+      OPTIONS,
+      mockRun({
+        official: [[release('v1.4.199')]],
+        fork: [[release('v1.4.197-kukapu.2')]],
+        listing: envelope([
+          worktree('published', 'v1.4.197'),
+          worktree('prepared', LATEST, { comment }),
+          worktree('published', LATEST)
+        ])
+      })
+    )
+    expect(result).toMatchObject({
+      launch: true,
+      sourceTag: source.sourceTag,
+      sourceCommit: source.sourceCommit,
+      sourceUpstreamOid: source.upstreamOid
+    })
+    expect(result).not.toHaveProperty('publicationCommit')
+    expect(result).not.toHaveProperty('state')
+  })
+
+  it.each(['sourceCommit', 'upstreamOid', 'publicationCommit'])(
+    'rejects contradictory %s for the same source tag',
+    async (field) => {
+      const comment = `orca-release-preparation:${JSON.stringify({ ...provenance(), [field]: 'b'.repeat(40), state: 'prepared' })}`
+      expect(
+        await runUpstreamReleasePrecheck(
+          OPTIONS,
+          mockRun({
+            listing: envelope([
+              worktree('published'),
+              worktree('prepared'),
+              worktree('prepared', LATEST, { comment })
+            ])
+          })
+        )
+      ).toMatchObject({ launch: false, reason: 'reconcile-legacy' })
+    }
+  )
+
+  it.each([true, false])(
+    'retains publication provenance regardless of marker order (%s)',
+    async (reverse) => {
+      const markers = [worktree('published'), worktree('prepared')]
+      const result = await runUpstreamReleasePrecheck(
+        OPTIONS,
+        mockRun({
+          official: [[release('v1.4.199')]],
+          listing: envelope(reverse ? markers.toReversed() : markers)
+        })
+      )
+      expect(result).toMatchObject({
+        launch: true,
+        sourceCommit: 'c'.repeat(40),
+        publicationCommit: 'd'.repeat(40)
+      })
+    }
+  )
+
+  it('blocks a higher uninventoried fork revision even when the official version is covered', async () => {
+    expect(
+      await runUpstreamReleasePrecheck(
+        OPTIONS,
+        mockRun({
+          fork: [[release(`${LATEST}-kukapu.2`)]],
+          listing: envelope([worktree('prepared')])
+        })
+      )
+    ).toMatchObject({ launch: false, reason: 'unknown-source-lineage', highwaterTag: LATEST })
   })
 })
 
@@ -425,7 +560,7 @@ describe('standalone environment entrypoint', () => {
     vi.mocked(execFileSync)
       .mockReturnValueOnce(JSON.stringify([release(LATEST)]))
       .mockReturnValueOnce('[]')
-      .mockReturnValueOnce(JSON.stringify(envelope()))
+      .mockReturnValueOnce(JSON.stringify(envelope([worktree('published', OPTIONS.baselineTag)])))
     const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     const previous = process.exitCode
     try {

@@ -151,9 +151,14 @@ describe('cross-version remote terminal wire', () => {
   })
 
   it(
-    'skews current code against a real published release',
+    'skews current code against a published release or explicitly pinned reference',
     () => {
-      expect(baselineRef).toMatch(/^v?\d/)
+      const pinnedRef = process.env.ORCA_CROSS_VERSION_BASELINE_REF?.trim()
+      if (pinnedRef) {
+        expect(baselineRef).toBe(pinnedRef)
+      } else {
+        expect(baselineRef).toMatch(/^v\d+\.\d+\.\d+$/)
+      }
       expect(baseline.revision).toMatch(/^[0-9a-f]{40}$/)
       expect(baseline.revision).not.toBe(current.revision)
     },

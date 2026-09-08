@@ -5,6 +5,10 @@ import type {
 import { OrchestrationError } from '../../orchestration-error'
 import { generateId } from '../generated-id'
 import type { OrchestrationDb } from '../orchestration-db'
+import { persistedDispatchIdentityFields } from '../persisted-dispatch-identity'
+import { isEquivalentPaneKey } from '../pane-key-match'
+import { isPersistedStructuredWorkerResource } from '../../worker-terminal-ownership'
+import { isPersistedStructuredWorkerIdentity } from '../../persisted-structured-worker-identity'
 
 // --- Worker terminal resources (schema v23) ---------------------------------------------------
 
@@ -60,18 +64,24 @@ export function createWorkerTerminalResourceStatement(
     terminalHandle: string
     paneKey: string | null
     processIncarnation: string | null
+    endpointId?: string | null
+    endpointIncarnation?: string | null
     hostScope?: string | null
     ownership: Extract<WorkerTerminalOwnershipState, 'owned' | 'external'>
   }
 ): WorkerTerminalResourceRow {
   const id = generateId('wtr')
+  const identity = persistedDispatchIdentityFields(this.db, 'worker_terminal_resources', {
+    endpoint_id: params.endpointId ?? null,
+    endpoint_incarnation: params.endpointIncarnation ?? params.processIncarnation
+  })
   this.db
     .prepare(
       `INSERT INTO worker_terminal_resources (
          id, origin_dispatch_id, owner_dispatch_id, worktree_id, terminal_handle,
          pane_key, process_incarnation, host_scope, ownership_state, release_state,
-         retained_reason
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_requested', ?)`
+         retained_reason ${identity.map(([column]) => `, ${column}`).join('')}
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_requested', ?${', ?'.repeat(identity.length)})`
     )
     .run(
       id,
@@ -83,7 +93,8 @@ export function createWorkerTerminalResourceStatement(
       params.processIncarnation,
       params.hostScope ?? null,
       params.ownership,
-      params.ownership === 'external' ? 'external_terminal' : null
+      params.ownership === 'external' ? 'external_terminal' : null,
+      ...identity.map(([, value]) => value)
     )
   return this.getWorkerTerminalResource(id) as WorkerTerminalResourceRow
 }
@@ -129,6 +140,8 @@ export function transferWorkerTerminalResourceStatement(
     terminalHandle: string
     paneKey: string
     processIncarnation: string
+    endpointId?: string | null
+    endpointIncarnation?: string | null
     hostScope: string | null
   }
 ): WorkerTerminalResourceRow {
@@ -139,8 +152,28 @@ export function transferWorkerTerminalResourceStatement(
       `Worker terminal resource ${params.resourceId} was not found.`
     )
   }
+  if (
+    isPersistedStructuredWorkerResource(
+      resource,
+      this.getWorkerTerminalArchive(resource.owner_dispatch_id)
+    ) ||
+    isPersistedStructuredWorkerIdentity(
+      params.paneKey,
+      params.processIncarnation,
+      params.terminalHandle
+    )
+  ) {
+    throw new OrchestrationError(
+      'request_mismatch',
+      'A structured resource cannot transfer native terminal ownership.'
+    )
+  }
   const priorOwners = JSON.parse(resource.prior_owner_dispatch_ids) as string[]
   priorOwners.push(resource.owner_dispatch_id)
+  const identity = persistedDispatchIdentityFields(this.db, 'worker_terminal_resources', {
+    endpoint_id: params.endpointId ?? null,
+    endpoint_incarnation: params.endpointIncarnation ?? params.processIncarnation
+  })
   this.db
     .prepare(
       `UPDATE worker_terminal_resources
@@ -148,6 +181,7 @@ export function transferWorkerTerminalResourceStatement(
            retained_reason = NULL, release_requested_at = NULL, release_completed_at = NULL,
            release_error = NULL, terminal_handle = ?, pane_key = ?, process_incarnation = ?,
            host_scope = ?, updated_at = datetime('now')
+           ${identity.map(([column]) => `, ${column} = ${column === 'endpoint_id' ? 'COALESCE(?, endpoint_id)' : '?'}`).join('')}
        WHERE id = ? AND ownership_state = 'owned'`
     )
     .run(
@@ -157,12 +191,74 @@ export function transferWorkerTerminalResourceStatement(
       params.paneKey,
       params.processIncarnation,
       params.hostScope,
+      ...identity.map(([, value]) => value),
       params.resourceId
     )
   return this.getWorkerTerminalResource(params.resourceId) as WorkerTerminalResourceRow
 }
 
-// Finds an owned, settled, exact-match resource for an explicitly reused terminal.
+// Transaction-neutral: authority/fence and this resource must commit or roll back together.
+export function rebindWorkerTerminalResourceStatement(
+  this: OrchestrationDb,
+  params: {
+    dispatchId: string
+    paneKey: string
+    processIncarnation: string
+    terminalHandle?: string
+    endpointId?: string | null
+    hostScope?: string | null
+  }
+): void {
+  const resource = this.getWorkerTerminalResourceByOwner(params.dispatchId)
+  if (!resource) {
+    return
+  }
+  if (
+    isPersistedStructuredWorkerResource(
+      resource,
+      this.getWorkerTerminalArchive(params.dispatchId)
+    ) ||
+    isPersistedStructuredWorkerIdentity(
+      params.paneKey,
+      params.processIncarnation,
+      params.terminalHandle
+    ) ||
+    !['owned', 'external'].includes(resource.ownership_state) ||
+    !resource.pane_key ||
+    !isEquivalentPaneKey(resource.pane_key, params.paneKey) ||
+    resource.process_incarnation !== params.processIncarnation ||
+    (params.hostScope !== undefined && resource.host_scope !== params.hostScope)
+  ) {
+    throw new OrchestrationError(
+      'request_mismatch',
+      `Dispatch ${params.dispatchId} cannot rebind its historical terminal resource to an unproven identity.`
+    )
+  }
+  if (!['not_requested', 'retained'].includes(resource.release_state)) {
+    throw new OrchestrationError(
+      'terminal_release_in_progress',
+      `Dispatch ${params.dispatchId} has a terminal release in progress.`
+    )
+  }
+  const identity = persistedDispatchIdentityFields(this.db, 'worker_terminal_resources', {
+    endpoint_id: params.endpointId ?? null,
+    endpoint_incarnation: params.processIncarnation
+  })
+  this.db
+    .prepare(
+      `UPDATE worker_terminal_resources SET terminal_handle = COALESCE(?, terminal_handle),
+       pane_key = ?, updated_at = datetime('now')
+       ${identity.map(([column]) => `, ${column} = ${column === 'endpoint_id' ? 'COALESCE(?, endpoint_id)' : '?'}`).join('')}
+     WHERE id = ? AND owner_dispatch_id = ?`
+    )
+    .run(
+      params.terminalHandle ?? null,
+      params.paneKey,
+      ...identity.map(([, value]) => value),
+      resource.id,
+      params.dispatchId
+    )
+}
 
 export type WorkerTerminalResourceStoreMethods = {
   backfillWorkerTerminalResources: typeof backfillWorkerTerminalResources
@@ -171,6 +267,7 @@ export type WorkerTerminalResourceStoreMethods = {
   getWorkerTerminalResourceByOwner: typeof getWorkerTerminalResourceByOwner
   getWorkerTerminalResourceFormerlyOwnedBy: typeof getWorkerTerminalResourceFormerlyOwnedBy
   transferWorkerTerminalResourceStatement: typeof transferWorkerTerminalResourceStatement
+  rebindWorkerTerminalResourceStatement: typeof rebindWorkerTerminalResourceStatement
 }
 
 export function attachWorkerTerminalResourceStore(ctor: { prototype: object }): void {
@@ -180,6 +277,7 @@ export function attachWorkerTerminalResourceStore(ctor: { prototype: object }): 
     getWorkerTerminalResource,
     getWorkerTerminalResourceByOwner,
     getWorkerTerminalResourceFormerlyOwnedBy,
-    transferWorkerTerminalResourceStatement
+    transferWorkerTerminalResourceStatement,
+    rebindWorkerTerminalResourceStatement
   })
 }

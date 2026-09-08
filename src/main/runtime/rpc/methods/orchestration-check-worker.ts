@@ -5,6 +5,8 @@ import { formatMessageBanner } from '../../orchestration/formatter'
 import { routeAllMailboxPages } from './orchestration-schemas'
 import type { CheckParams } from './orchestration-schemas'
 import type { z } from 'zod'
+import { getPersistedSchemaCapabilities } from '../../orchestration/db/schema/persisted-schema-capabilities'
+import { isEquivalentPaneKey } from '../../orchestration/db/pane-key-match'
 
 type CheckParamsInput = z.infer<typeof CheckParams>
 type ActiveDispatch = NonNullable<ReturnType<OrchestrationDb['getActiveDispatchForIdentity']>>
@@ -43,6 +45,29 @@ export async function checkWorkerMailbox(args: {
     return undefined
   }
   const address = `dispatch:${workerMailbox.dispatchId}`
+  const durable = getPersistedSchemaCapabilities(db.db).mailboxScopedDeliveries
+  const source = {
+    dispatchId: workerMailbox.dispatchId,
+    source: activeDispatch ? ('local' as const) : ('remote' as const)
+  }
+  const consumer = durable ? db.getDispatchMailboxConsumer(source) : undefined
+  const deliveryConsumer = consumer
+    ? { ...source, consumerGeneration: consumer.consumerGeneration }
+    : undefined
+  const requireGeneration = (): void => {
+    if (consumer) {
+      const current = db.getDispatchMailboxConsumer(source)
+      if (
+        current.consumerGeneration !== consumer.consumerGeneration ||
+        current.runId !== consumer.runId
+      ) {
+        throw new OrchestrationError(
+          'consumer_fenced',
+          'This worker mailbox consumer has been replaced.'
+        )
+      }
+    }
+  }
   const routeDirectSnapshot = async (
     runId: string,
     directHandle: string,
@@ -57,6 +82,17 @@ export async function checkWorkerMailbox(args: {
     if (activeDispatch) {
       const current = db.getActiveDispatchForIdentity(handle, paneKey)
       if (current?.id === activeDispatch.id) {
+        if (
+          durable &&
+          current.assignee_pane_key &&
+          (!paneKey || !isEquivalentPaneKey(current.assignee_pane_key, paneKey))
+        ) {
+          throw new OrchestrationError(
+            'consumer_fenced',
+            'This worker mailbox is bound to another pane.'
+          )
+        }
+        requireGeneration()
         return
       }
     } else if (remoteAttachment && paneKey) {
@@ -69,10 +105,13 @@ export async function checkWorkerMailbox(args: {
           processIncarnation: runtime.getTerminalProcessIncarnation(handle)
         })
       ) {
+        requireGeneration()
         return
       }
     }
-    const latestDispatch = db.getDispatchContextById(workerMailbox.dispatchId)
+    const latestDispatch = activeDispatch
+      ? db.getDispatchContextById(workerMailbox.dispatchId)
+      : undefined
     const owningRunId = latestDispatch?.run_id ?? activeDispatch?.run_id ?? workerMailbox.runId
     if (
       owningRunId &&
@@ -121,6 +160,9 @@ export async function checkWorkerMailbox(args: {
     )
   }
 
+  if (durable) {
+    await revalidateWorkerMailbox()
+  }
   if (activeDispatch) {
     await routeDirectSnapshot(activeDispatch.run_id, handle, (throughSequence) =>
       db.routeUnreadDirectMessagesToDispatchMailbox(
@@ -143,23 +185,47 @@ export async function checkWorkerMailbox(args: {
     }
   }
   await revalidateWorkerMailbox()
+  const acknowledged =
+    deliveryConsumer && params.ack
+      ? db.acknowledgeDispatchDelivery({ ...deliveryConsumer, deliveryId: params.ack })
+      : undefined
   const showAll = params.all === true || (params.unread === false && params.peek !== true)
-  const messages = showAll
-    ? db.getAllMessagesForHandle(address, 100, typeFilter)
-    : db.getUnreadMessages(address, typeFilter)
-  if (!showAll && params.peek !== true && messages.length > 0) {
-    db.markAsRead(messages.map((message) => message.id))
-  }
-  if (messages.length > 0 || !params.wait) {
+  const readMailbox = () => {
+    requireGeneration()
+    const batch =
+      deliveryConsumer && !showAll && !params.peek
+        ? db.getOrCreateDispatchDelivery({
+            ...deliveryConsumer,
+            wakeTypes: params.wait ? typeFilter : undefined
+          })
+        : undefined
+    const messages = deliveryConsumer
+      ? !showAll && !params.peek
+        ? (batch?.messages ?? [])
+        : db.getDispatchMailboxMessages({ ...deliveryConsumer, all: showAll, types: typeFilter })
+      : showAll
+        ? db.getAllMessagesForHandle(address, 100, typeFilter)
+        : db.getUnreadMessages(address, typeFilter)
+    if (!durable && !showAll && !params.peek && messages.length > 0) {
+      db.markAsRead(messages.map((message) => message.id))
+    }
     return {
       ...(workerMailbox.runId ? { runId: workerMailbox.runId } : {}),
       dispatchId: workerMailbox.dispatchId,
       messages,
       count: messages.length,
+      ...(durable ? { acknowledged: acknowledged?.delivery.id ?? null } : {}),
+      ...(deliveryConsumer && !showAll && !params.peek
+        ? { deliveryId: batch?.delivery.id ?? null, replayed: batch?.replayed ?? false }
+        : {}),
       ...(params.format || params.inject
         ? { formatted: messages.map(formatMessageBanner).join('\n\n') }
         : {})
     }
+  }
+  const first = readMailbox()
+  if (first.count > 0 || !params.wait || showAll) {
+    return first
   }
   const waitResult = await runtime.waitForMessage(address, {
     typeFilter: typeFilter as string[] | undefined,
@@ -171,6 +237,7 @@ export async function checkWorkerMailbox(args: {
     return {
       ...(workerMailbox.runId ? { runId: workerMailbox.runId } : {}),
       dispatchId: workerMailbox.dispatchId,
+      ...(durable ? { acknowledged: acknowledged?.delivery.id ?? null } : {}),
       messages: [],
       count: 0,
       timedOut: waitResult === 'timed_out',
@@ -178,15 +245,5 @@ export async function checkWorkerMailbox(args: {
       connectionLost: waitResult === 'cancelled' && signal?.aborted === true
     }
   }
-  const arrived = db.getUnreadMessages(address, typeFilter)
-  db.markAsRead(arrived.map((message) => message.id))
-  return {
-    ...(workerMailbox.runId ? { runId: workerMailbox.runId } : {}),
-    dispatchId: workerMailbox.dispatchId,
-    messages: arrived,
-    count: arrived.length,
-    ...(params.format || params.inject
-      ? { formatted: arrived.map(formatMessageBanner).join('\n\n') }
-      : {})
-  }
+  return readMailbox()
 }

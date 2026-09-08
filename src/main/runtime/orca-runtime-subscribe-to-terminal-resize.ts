@@ -22,6 +22,7 @@ import {
 } from './orchestration/worker-terminal-process-liveness'
 import { getRepoIdFromWorktreeId } from '../../shared/worktree/id'
 import { buildOrchestrationTaskDisplayMetadata } from '../../shared/orchestration-task-display'
+import { isPersistedStructuredWorkerIdentity } from './orchestration/persisted-structured-worker-identity'
 
 export class OrcaRuntimeWithSubscribeToTerminalResize extends OrcaRuntimeWithApplyMobileDisplayMode {
   subscribeToTerminalResize(
@@ -150,6 +151,9 @@ export class OrcaRuntimeWithSubscribeToTerminalResize extends OrcaRuntimeWithApp
     processIncarnation: string,
     serializedHostScope: string | null
   ): Promise<'live' | 'exited' | 'unverifiable'> {
+    if (isPersistedStructuredWorkerIdentity(processIncarnation)) {
+      return 'unverifiable'
+    }
     const hostScope = parseWorkerTerminalHostScope(serializedHostScope)
     if (!hostScope || !this.ptyController?.listProcesses) {
       return 'unverifiable'

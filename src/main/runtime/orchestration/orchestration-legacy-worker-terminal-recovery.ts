@@ -1,6 +1,7 @@
 import { isPtyIncarnationId, type PtyIncarnationId } from '../../../shared/pty-incarnation'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
 import type { LegacyWorkerTerminalRecoveryRow } from './types'
+import { isPersistedStructuredWorkerIdentity } from './persisted-structured-worker-identity'
 
 export type LegacyWorkerTerminalRecoveryCandidate = {
   dispatchId: string
@@ -69,6 +70,11 @@ export function planLegacyWorkerTerminalRecovery(
     const terminalHandle = row.assignee_handle?.trim()
     const workerHandle = row.agent_terminal_handle?.trim()
     const processIncarnation = row.process_incarnation?.trim()
+    if (
+      isPersistedStructuredWorkerIdentity(terminalHandle, workerHandle, paneKey, processIncarnation)
+    ) {
+      continue
+    }
     const process = processIncarnation ? parseProcessIncarnation(processIncarnation) : null
     if (
       !worktreeId ||

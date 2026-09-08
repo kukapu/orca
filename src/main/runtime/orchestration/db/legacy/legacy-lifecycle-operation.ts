@@ -9,6 +9,46 @@ import type {
 import { OrchestrationError } from '../../orchestration-error'
 import { LEGACY_CONTRACT_VERSION } from '../contract-constants'
 import type { OrchestrationDb } from '../orchestration-db'
+import { workerReportObservation } from '../../worker-report-observation'
+import { recordAcceptedWorkerReportFact } from '../accepted-worker-report-fact'
+
+function acceptedLegacyReportObservation(
+  db: OrchestrationDb,
+  message: MessageRow,
+  taskId: string,
+  dispatchId: string,
+  settlement: Extract<WorkerReportSettlement, { action: 'settled' }>
+) {
+  if (settlement.duplicate === false) {
+    return workerReportObservation(message)
+  }
+  // A reconstructed receipt repeats a status verdict; it is not proof this message was accepted.
+  try {
+    const payload = JSON.parse(message.payload ?? 'null') as {
+      taskId?: unknown
+      dispatchId?: unknown
+      outcome?: unknown
+    } | null
+    const result = JSON.parse(db.getTask(taskId)?.result ?? 'null') as {
+      provenance?: unknown
+      messageId?: unknown
+      outcome?: unknown
+    } | null
+    if (
+      payload?.taskId === taskId &&
+      payload?.dispatchId === dispatchId &&
+      payload?.outcome === settlement.outcome &&
+      result?.provenance === 'worker_report' &&
+      result?.messageId === message.id &&
+      result?.outcome === settlement.outcome
+    ) {
+      return workerReportObservation(message)
+    }
+  } catch {
+    // Unstructured legacy results do not establish report acceptance.
+  }
+  return undefined
+}
 
 export function commitLegacyLifecycleOperation(
   this: OrchestrationDb,
@@ -68,6 +108,20 @@ export function commitLegacyLifecycleOperation(
           'operation_unknown',
           `Legacy operation ${params.operationKey} lost its recorded message.`
         )
+      }
+      if (params.lifecycle.kind === 'worker_report' && response.settlement?.action === 'settled') {
+        recordAcceptedWorkerReportFact(this, {
+          taskId: params.lifecycle.taskId,
+          dispatchId,
+          outcome: response.settlement.outcome,
+          observation: acceptedLegacyReportObservation(
+            this,
+            message,
+            params.lifecycle.taskId,
+            dispatchId,
+            response.settlement
+          )
+        })
       }
       this.db.exec('COMMIT')
       return {
@@ -161,6 +215,18 @@ export function commitLegacyLifecycleOperation(
       if (settlement.action === 'rejected') {
         throw new OrchestrationError(settlement.code, settlement.reason)
       }
+      recordAcceptedWorkerReportFact(this, {
+        taskId: params.lifecycle.taskId,
+        dispatchId,
+        outcome: settlement.outcome,
+        observation: acceptedLegacyReportObservation(
+          this,
+          message,
+          params.lifecycle.taskId,
+          dispatchId,
+          settlement
+        )
+      })
       this.db
         .prepare(
           `UPDATE legacy_compatibility_principals

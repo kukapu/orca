@@ -9,6 +9,7 @@ import {
   type FederationEffect
 } from './orchestration-federation-effects'
 import type { WorkerSetupReceipt } from './orchestration-worker-topology'
+import { isPersistedStructuredWorkerIdentity } from '../../orchestration/persisted-structured-worker-identity'
 import {
   monitorFederatedSetup,
   persistFederatedReadinessStage,
@@ -225,9 +226,7 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS: RpcMethod[] = [
         })
         persistFederatedSetupWaitOutcome({ ...setupStage, wait })
         if (!wait.satisfied) {
-          if (setup.state === 'failed') {
-            failedStage = 'setup_wait'
-          }
+          failedStage = setup.state === 'failed' ? 'setup_wait' : failedStage
           throw new Error(
             wait.blockedReason
               ? `Agent startup blocked: ${wait.blockedReason}`
@@ -236,17 +235,28 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS: RpcMethod[] = [
         }
         const paneKey = runtime.getTerminalPaneKey(terminalHandle)
         const processIncarnation = runtime.getTerminalProcessIncarnation(terminalHandle)
-        if (!paneKey || !processIncarnation) {
+        if (
+          !paneKey ||
+          !processIncarnation ||
+          isPersistedStructuredWorkerIdentity(paneKey, processIncarnation, terminalHandle)
+        ) {
           throw new Error('stable_pane_required')
         }
+        const authority = runtime.getOrchestrationDispatchAuthority(terminalHandle)
         const capability = db.prepareRemoteAttachmentAuthority({
           dispatchId: params.dispatchId,
           paneKey,
           processIncarnation,
+          ...(authority?.paneKey === paneKey &&
+          authority.processIncarnation === processIncarnation &&
+          authority.hostScope
+            ? { hostScope: JSON.stringify(authority.hostScope) }
+            : {}),
           worktreeId: worktree.id,
           terminalHandle,
           setupState: setup.state,
-          effects
+          effects,
+          terminalOwnership: params.terminal ? 'external' : 'created'
         })
         failedStage = 'dispatch_input'
         await runtime.sendTerminalAgentPrompt(

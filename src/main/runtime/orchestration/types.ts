@@ -57,6 +57,7 @@ export type DeliveryStatus = 'outstanding' | 'acknowledged' | 'fenced'
 export type DeliveryRow = {
   id: string
   run_id: string
+  mailbox_handle?: string
   consumer_generation: number
   message_ids: string
   status: DeliveryStatus

@@ -6,7 +6,13 @@ the version-matched skills and CLI help; they do not replace execution-safety ru
 
 For this fork, `main-kukapu` is the primary branch and tracks `origin/main-kukapu`.
 Use exact stable upstream release tags as the automated update source, not
-the moving `upstream/main` tip. Before automated sync,
+the moving `upstream/main` tip. Candidates start from the latest verified canonical
+fork source tag (`v<official>-kukapu.N`), never the historical publication tree.
+The user authorized `git merge -s ours` ONLY as a history bridge from validated
+source C to published F: publication P has exactly parents C,F and tree(C)=tree(P).
+Keep normal hooks, no force, and never use ours to resolve code integration.
+Review and explicitly port own changes since the last publication before updating
+the source; unknown edits block instead of being discarded. Before automated sync,
 follow [`docs/reference/upstream-sync-automation.md`](./docs/reference/upstream-sync-automation.md).
 
 # Design System

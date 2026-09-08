@@ -110,6 +110,23 @@ describe('orchestration worker-show interactive wait output', () => {
     )
   })
 
+  it('prints observed model even when agentWait was not evaluated', async () => {
+    const line = await showWorker({
+      observedOptions: { origin: 'hook', status: 'observed', model: 'zai/glm-5.3' }
+    })
+
+    expect(line).toContain('ctx_1 task=task_1 [ready] stage=dispatch_input')
+    expect(line).toContain('Interactive wait: unknown (not evaluated)')
+    expect(line).toContain('Observed options: model=zai/glm-5.3 (via hook)')
+  })
+
+  it('prints both unknown observations when the host evaluated neither', async () => {
+    const line = await showWorker(undefined)
+
+    expect(line).toContain('Interactive wait: unknown (not evaluated)')
+    expect(line).toContain('Observed options: unknown (not evaluated)')
+  })
+
   it('keeps observed-options unknown on runtimes that never evaluated it', async () => {
     const line = await showWorker({ status: 'live', exactWorker: true, agentWait: null })
 

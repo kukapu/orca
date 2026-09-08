@@ -10,6 +10,7 @@ import { encodeRunListCursor, decodeRunListCursor } from '../run-list-cursor'
 import type { RunListPage } from '../run-list-page'
 import type { OrchestrationDb } from '../orchestration-db'
 import { RUN_COLUMN_LIST } from '../row-column-lists'
+import { fenceMailboxDelivery } from '../messages/mailbox-delivery-scope'
 
 export type LegacyAdoptedMailboxOwner = {
   runId: string
@@ -153,9 +154,7 @@ export function requireRun(this: OrchestrationDb, runId: string): void {
 }
 
 export function fenceOutstandingDelivery(this: OrchestrationDb, runId: string): void {
-  this.db
-    .prepare("UPDATE deliveries SET status = 'fenced' WHERE run_id = ? AND status = 'outstanding'")
-    .run(runId)
+  fenceMailboxDelivery(this, { runId, mailboxHandle: `run:${runId}` })
 }
 
 export type RunLookupMethods = {

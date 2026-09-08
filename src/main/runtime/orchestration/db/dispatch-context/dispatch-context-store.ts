@@ -4,8 +4,8 @@ import { parsePaneKey } from '../../../../../shared/stable-pane-id'
 import { CURRENT_CONTRACT_VERSION } from '../contract-constants'
 import { generateId } from '../generated-id'
 import { paneKeyMatchSuffix } from '../pane-key-match'
-import { claimDispatchContextRow } from '../dispatch-row-writer'
-import type { DispatchCreator } from '../dispatch-depth'
+import { prepareDispatchContextClaim } from '../dispatch-row-writer'
+import { recordedCreatorIdentity, type DispatchCreator } from '../dispatch-depth'
 import type { OrchestrationDb } from '../orchestration-db'
 import { taskNotFoundError, taskNotStartableError } from '../../task-dispatch-refusal'
 
@@ -55,20 +55,23 @@ export function createDispatchContext(
   const paneSuffix =
     assigneePaneKey && parsePaneKey(assigneePaneKey) ? paneKeyMatchSuffix(assigneePaneKey) : null
   const id = generateId('ctx')
+  const claim = prepareDispatchContextClaim(this.db, {
+    id,
+    contractVersion: CURRENT_CONTRACT_VERSION,
+    launchTokenHash: launchTokenHash ?? null,
+    assigneeHandle,
+    assigneePaneKey: assigneePaneKey ?? null,
+    processIncarnation: processIncarnation ?? null,
+    creatorDispatchId: this.resolveCreatorDispatchId(params.creator),
+    ...recordedCreatorIdentity(params.creator),
+    priorFailures,
+    depth,
+    taskId,
+    paneSuffix
+  })
   this.db.exec('SAVEPOINT create_dispatch_context')
   try {
-    const inserted = claimDispatchContextRow(this.db, {
-      id,
-      contractVersion: CURRENT_CONTRACT_VERSION,
-      launchTokenHash: launchTokenHash ?? null,
-      assigneeHandle,
-      assigneePaneKey: assigneePaneKey ?? null,
-      processIncarnation: processIncarnation ?? null,
-      priorFailures,
-      depth,
-      taskId,
-      paneSuffix
-    })
+    const inserted = claim()
     if (inserted.changes !== 1) {
       const current = this.getTask(taskId)
       const occupied = this.findActiveDispatchForAssignee(assigneeHandle, assigneePaneKey)

@@ -2,6 +2,10 @@ import type { WorkerTerminalResourceRow } from '../../worker-terminal-ownership'
 import { OrchestrationError } from '../../orchestration-error'
 import { isEquivalentPaneKey } from '../pane-key-match'
 import type { OrchestrationDb } from '../orchestration-db'
+import {
+  isPersistedStructuredWorkerResource,
+  WORKER_SETTLED_STATES
+} from '../../worker-terminal-ownership'
 
 // Finds an owned, settled, exact-match resource for an explicitly reused terminal.
 export function findTransferableWorkerTerminalResource(
@@ -19,8 +23,10 @@ export function findTransferableWorkerTerminalResource(
   const candidates = this.db
     .prepare(
       `SELECT r.* FROM worker_terminal_resources r
-         JOIN worker_dispatches w ON w.dispatch_id = r.owner_dispatch_id
-        WHERE r.process_incarnation = ? AND r.host_scope IS ?
+         LEFT JOIN worker_dispatches w ON w.dispatch_id = r.owner_dispatch_id
+         LEFT JOIN remote_dispatch_attachments a ON a.dispatch_id = r.owner_dispatch_id
+         WHERE r.process_incarnation = ? AND r.host_scope IS ?
+           AND (w.dispatch_id IS NOT NULL OR a.dispatch_id IS NOT NULL)
           AND r.ownership_state != 'released'`
     )
     .all(params.processIncarnation, params.hostScope) as WorkerTerminalResourceRow[]
@@ -42,14 +48,28 @@ export function findTransferableWorkerTerminalResource(
       `Terminal ${params.terminalHandle} has a release in progress; wait for cleanup or use another terminal.`
     )
   }
-  return exact.find(
-    (candidate) =>
-      candidate.ownership_state === 'owned' &&
-      ['not_requested', 'retained'].includes(candidate.release_state) &&
-      ['succeeded', 'failed', 'stopped', 'abandoned'].includes(
-        this.getWorkerDispatch(candidate.owner_dispatch_id)?.state ?? ''
+  return exact.find((candidate) => {
+    if (
+      candidate.ownership_state !== 'owned' ||
+      !['not_requested', 'retained'].includes(candidate.release_state) ||
+      isPersistedStructuredWorkerResource(
+        candidate,
+        this.getWorkerTerminalArchive(candidate.owner_dispatch_id)
       )
-  )
+    ) {
+      return false
+    }
+    const local = this.getWorkerDispatch(candidate.owner_dispatch_id)
+    const remote = this.getRemoteDispatchAttachment(candidate.owner_dispatch_id)
+    // This transfers an ownership lock, never a verdict that the process exited.
+    return Boolean(
+      (local || remote) &&
+      (!local || WORKER_SETTLED_STATES.includes(local.state)) &&
+      (!remote ||
+        (WORKER_SETTLED_STATES.includes(remote.state) &&
+          !this.isUnobservedPromptAttachment(remote, { requireRetainedCapability: false })))
+    )
+  })
 }
 
 export function workerTerminalResourceHasIdentityConflict(

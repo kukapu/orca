@@ -319,6 +319,101 @@ describe('OrchestrationDb worker Dispatch state', () => {
     expect(d.getTask(task.id)?.status).toBe('blocked')
   })
 
+  it('settles an operator-close recorded by the pty-exit handler while the task is already blocked', () => {
+    const d = createDb()
+    const task = d.createTask({ spec: 'operator close first' })
+    const started = d.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: Number.MAX_SAFE_INTEGER,
+      taskId: task.id,
+      startOptions: {}
+    })
+    d.prepareStartingWorkerAuthority({
+      dispatchId: started.dispatch.id,
+      handle: 'term_worker',
+      paneKey: 'tab_worker:leaf_worker',
+      processIncarnation: 'runtime:pty:1',
+      worktreeId: 'repo::worktree',
+      setupState: 'not_applicable',
+      effects: []
+    })
+    d.markWorkerDispatchReady(started.dispatch.id)
+    expect(d.beginWorkerStop(started.dispatch.id, 'runtime_test').disposition).toBe('stopping')
+    expect(d.getTask(task.id)?.status).toBe('blocked')
+    d.failDispatch(started.dispatch.id, 'The recorded worker process is exited', {
+      workerProcessExited: true,
+      terminationReason: 'operator_close'
+    })
+    expect(d.getWorkerDispatch(started.dispatch.id)).toMatchObject({
+      state: 'failed',
+      stage: 'process_exited'
+    })
+    expect(d.getTask(task.id)?.status).toBe('blocked')
+    expect(d.settleWorkerStop(started.dispatch.id).state).toBe('stopped')
+    expect(d.getTask(task.id)?.status).toBe('blocked')
+  })
+
+  it('blocks a task left ready by an operator-close exit before settleWorkerStop', () => {
+    const d = createDb()
+    const task = d.createTask({ spec: 'exit before stop settle' })
+    const started = d.createStartingWorkerDispatch({
+      creator: { kind: 'system' },
+      maxDepth: Number.MAX_SAFE_INTEGER,
+      taskId: task.id,
+      startOptions: {}
+    })
+    d.prepareStartingWorkerAuthority({
+      dispatchId: started.dispatch.id,
+      handle: 'term_worker',
+      paneKey: 'tab_worker:leaf_worker',
+      processIncarnation: 'runtime:pty:1',
+      worktreeId: 'repo::worktree',
+      setupState: 'not_applicable',
+      effects: []
+    })
+    d.markWorkerDispatchReady(started.dispatch.id)
+    d.failDispatch(started.dispatch.id, 'The recorded worker process is exited', {
+      workerProcessExited: true,
+      terminationReason: 'operator_close'
+    })
+    expect(d.getTask(task.id)?.status).toBe('ready')
+    expect(d.settleWorkerStop(started.dispatch.id).state).toBe('stopped')
+    expect(d.getTask(task.id)?.status).toBe('blocked')
+  })
+
+  it.each(['failed', 'stopped', 'stalled'] as const)(
+    'preserves settled workers on abandon but allows an unobserved prompt: %s',
+    (state) => {
+      const d = createDb()
+      const task = d.createTask({ spec: 'abandon recovery' })
+      const started = d.createStartingWorkerDispatch({
+        creator: { kind: 'system' },
+        maxDepth: Number.MAX_SAFE_INTEGER,
+        taskId: task.id,
+        startOptions: {}
+      })
+      d.failWorkerStart(started.dispatch.id, 'dispatch_input', 'agent_prompt_stalled', {
+        retainCapability: true
+      })
+      if (state === 'failed') {
+        d.settleWorkerReport({
+          taskId: task.id,
+          dispatchId: started.dispatch.id,
+          outcome: 'failed',
+          result: 'worker failure'
+        })
+      } else if (state === 'stopped') {
+        d.beginWorkerStop(started.dispatch.id, 'runtime_test')
+        d.settleWorkerStop(started.dispatch.id)
+      }
+      const worker = d.getWorkerDispatch(started.dispatch.id)
+      expect(d.abandonWorkerDispatch(started.dispatch.id)).toMatchObject({
+        disposition: state === 'stalled' ? 'abandoned' : 'stale',
+        worker: state === 'stalled' ? { state: 'abandoned' } : worker
+      })
+    }
+  )
+
   it('allows explicit stop recovery from uncertain local and remote starts', () => {
     const d = createDb()
     const task = d.createTask({ spec: 'uncertain local start' })
@@ -392,12 +487,19 @@ describe('OrchestrationDb worker Dispatch state', () => {
 
     attach('ctx_valid_old', `tab_old:${leafId}`)
     for (let index = 0; index < 64; index += 1) {
-      attach(`ctx_malformed_${index}`, `:${leafId}`)
+      // Seed legacy overlaps without passing through the new occupancy fence.
+      attach(`ctx_malformed_${index}`, `malformed_${index}`)
+      d.db
+        .prepare('UPDATE remote_dispatch_attachments SET pane_key = ? WHERE dispatch_id = ?')
+        .run(`:${leafId}`, `ctx_malformed_${index}`)
     }
 
     expect(d.findActiveRemoteAttachmentForPane(`tab_reminted:${leafId}`)?.dispatch_id).toBe(
       'ctx_valid_old'
     )
+    d.markRemoteAttachmentReady('ctx_valid_old')
+    d.beginRemoteAttachmentStop('ctx_valid_old')
+    d.settleRemoteAttachmentStop('ctx_valid_old')
     attach('ctx_valid_new', `tab_new:${leafId}`)
     expect(d.findActiveRemoteAttachmentForPane(`tab_reminted:${leafId}`)?.dispatch_id).toBe(
       'ctx_valid_new'

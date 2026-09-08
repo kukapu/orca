@@ -13,6 +13,7 @@ import type { OrcaRuntimeService } from '../../orca-runtime'
 import { describeUnconfirmedAgentStop } from '../../../../shared/pty-liveness-verdict'
 import { inspectWorkerTerminal } from './orchestration-worker-observation'
 import { orchestrationTimestampToMs } from './orchestration-worker-output'
+import { isPersistedStructuredWorkerResource } from '../../orchestration/worker-terminal-ownership'
 
 export type WorkerReleaseReceipt = {
   dispatchId: string
@@ -106,6 +107,15 @@ async function completeWorkerTerminalReleaseOnce(
   args: WorkerTerminalReleaseArgs
 ): Promise<WorkerReleaseReceipt> {
   const { runtime, db, dispatchId, resource } = args
+  if (isPersistedStructuredWorkerResource(resource, db.getWorkerTerminalArchive(dispatchId))) {
+    return {
+      dispatchId,
+      state: 'retained',
+      reason: 'identity_unproven',
+      processAction: 'none',
+      archive: archiveSummary(resource)
+    }
+  }
   const worker = db.getWorkerDispatch(dispatchId)
   if (!worker || worker.agent_terminal_handle !== resource.terminal_handle) {
     const retained = db.revertWorkerTerminalReleaseToRetained(resource.id, 'identity_unproven')

@@ -1,4 +1,7 @@
-import { WORKER_SETTLED_STATES } from '../../worker-terminal-ownership'
+import {
+  isPersistedStructuredWorkerResource,
+  WORKER_SETTLED_STATES
+} from '../../worker-terminal-ownership'
 import type {
   WorkerTerminalResourceRow,
   WorkerTerminalRetainedReason
@@ -51,6 +54,10 @@ export function requestWorkerTerminalRelease(
         ? { disposition: 'retained', resource: transferred, reason: 'ownership_transferred' }
         : { disposition: 'retained', resource: null, reason: 'no_owned_resource' }
     }
+    if (isPersistedStructuredWorkerResource(resource, this.getWorkerTerminalArchive(dispatchId))) {
+      this.db.exec('COMMIT')
+      return { disposition: 'retained', resource, reason: 'identity_unproven' }
+    }
     if (resource.release_state === 'released' || resource.ownership_state === 'released') {
       this.db.exec('COMMIT')
       return { disposition: 'already_released', resource }
@@ -76,7 +83,11 @@ export function requestWorkerTerminalRelease(
       return { disposition: 'retained', resource, reason: 'ownership_transferred' }
     }
     if (resource.release_state === 'retained' && resource.retained_reason === 'user_requested') {
-      this.db.prepare('DELETE FROM worker_terminal_archives WHERE dispatch_id = ?').run(dispatchId)
+      this.db
+        .prepare(
+          "DELETE FROM worker_terminal_archives WHERE dispatch_id = ? AND kind != 'structured_journal'"
+        )
+        .run(dispatchId)
     }
     this.db
       .prepare(
@@ -130,6 +141,10 @@ export function settleDeadWorkerTerminalRelease(
     const requesterSettled = Boolean(requester && WORKER_SETTLED_STATES.includes(requester.state))
     const ownerSettled = Boolean(owner && WORKER_SETTLED_STATES.includes(owner.state))
     if (
+      isPersistedStructuredWorkerResource(
+        resource,
+        this.getWorkerTerminalArchive(resource.owner_dispatch_id)
+      ) ||
       !priorOwners ||
       !requesterRelated ||
       !requesterSettled ||

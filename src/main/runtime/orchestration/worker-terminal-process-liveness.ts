@@ -1,4 +1,5 @@
 import type { PtyProcessInfo } from '../../providers/pty-process-info'
+import { isPersistedStructuredWorkerIdentity } from './persisted-structured-worker-identity'
 
 export type WorkerTerminalHostScope =
   | { kind: 'local'; hostId: 'local' }
@@ -40,6 +41,9 @@ export function classifyWorkerTerminalProcessIncarnation(
   processIncarnation: string,
   sessions: readonly PtyProcessInfo[]
 ): 'live' | 'exited' | 'unverifiable' {
+  if (isPersistedStructuredWorkerIdentity(processIncarnation)) {
+    return 'unverifiable'
+  }
   const possibleMatches = sessions.filter((session) =>
     processIncarnation.startsWith(`${session.id}:`)
   )

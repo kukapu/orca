@@ -6,6 +6,7 @@ import {
 } from '../../context-only-dispatch-release'
 import type { OrchestrationDb } from '../orchestration-db'
 import { reconcileTaskAfterDispatchInterruption } from '../dispatch-context/task-dispatch-reconciliation'
+import { isUnobservedPromptFailure } from './worker-dispatch-stop'
 
 export function abandonWorkerDispatch(
   this: OrchestrationDb,
@@ -44,6 +45,13 @@ export function abandonWorkerDispatch(
         'dispatch_inactive',
         `Dispatch ${dispatchId} is stopping; wait for worker-stop to settle before abandoning.`
       )
+    }
+    if (
+      (worker.state === 'failed' && !isUnobservedPromptFailure(worker)) ||
+      worker.state === 'stopped'
+    ) {
+      this.db.exec('COMMIT')
+      return { disposition: 'stale', worker }
     }
     if (worker.state === 'succeeded') {
       throw new OrchestrationError(

@@ -2,6 +2,7 @@ import type { MessageType, MessageRow } from '../../types'
 import { exposeMessageTimestamps, exposeMessageListTimestamps } from '../utc-timestamp'
 import { addLifecycleRejectionMarker } from '../lifecycle-rejection-marker'
 import type { OrchestrationDb } from '../orchestration-db'
+import { unreservedMailboxPushSql } from './mailbox-push-reservation'
 
 const MESSAGE_ID_UPDATE_BATCH_SIZE = 500
 const MESSAGE_MUTATION_SAVEPOINT = 'message_id_mutation'
@@ -97,6 +98,7 @@ export function getUndeliveredUnreadMessages(
     'to_handle = ?',
     'read = 0',
     'delivered_at IS NULL',
+    unreservedMailboxPushSql(this.db),
     "delivery_contract = 'current_delivery'"
   ]
   const params: (string | number)[] = [toHandle]
@@ -129,6 +131,7 @@ export function getUndeliveredUnreadMailboxHandles(this: OrchestrationDb): strin
       .prepare(
         `SELECT DISTINCT to_handle FROM messages
          WHERE read = 0 AND delivered_at IS NULL
+            AND ${unreservedMailboxPushSql(this.db)}
            AND delivery_contract = 'current_delivery'`
       )
       .all() as { to_handle: string }[]
@@ -164,7 +167,8 @@ export function markAsDelivered(this: OrchestrationDb, ids: string[]): void {
     this,
     ids,
     (placeholders) =>
-      `UPDATE messages SET delivered_at = datetime('now') WHERE id IN (${placeholders})`
+      `UPDATE messages SET delivered_at = datetime('now') WHERE id IN (${placeholders})
+       AND ${unreservedMailboxPushSql(this.db)}`
   )
 }
 
@@ -174,7 +178,7 @@ export function markAsUndelivered(this: OrchestrationDb, ids: string[]): void {
     ids,
     (placeholders) =>
       `UPDATE messages SET delivered_at = NULL
-       WHERE read = 0 AND id IN (${placeholders})`
+       WHERE read = 0 AND id IN (${placeholders}) AND ${unreservedMailboxPushSql(this.db)}`
   )
 }
 
@@ -187,6 +191,7 @@ export function areUnreadMessages(this: OrchestrationDb, toHandle: string, ids: 
       .prepare(
         `SELECT COUNT(*) AS count FROM messages INDEXED BY idx_messages_id
          WHERE to_handle = ? AND read = 0 AND delivery_contract = 'current_delivery'
+            AND ${unreservedMailboxPushSql(this.db)}
            AND id IN (${placeholders})`
       )
       .get(toHandle, ...batch) as { count: number }

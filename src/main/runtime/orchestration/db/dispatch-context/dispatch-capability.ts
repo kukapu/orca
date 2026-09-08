@@ -3,6 +3,8 @@ import { OrchestrationError } from '../../orchestration-error'
 import { hashDispatchCapability } from '../dispatch-capability-hash'
 import { isEquivalentPaneKey } from '../pane-key-match'
 import type { OrchestrationDb } from '../orchestration-db'
+import { getPersistedSchemaCapabilities } from '../schema/persisted-schema-capabilities'
+import { beginDispatchAuthorityTransaction } from '../persisted-dispatch-identity'
 
 export function mintDispatchCapability(
   this: OrchestrationDb,
@@ -12,27 +14,45 @@ export function mintDispatchCapability(
     processIncarnation: string
   }
 ): string {
-  const dispatch = this.getDispatchContextById(params.dispatchId)
-  if (!dispatch || (dispatch.status !== 'pending' && dispatch.status !== 'dispatched')) {
-    throw new OrchestrationError(
-      'dispatch_inactive',
-      `Dispatch ${params.dispatchId} is not active.`
-    )
-  }
   const capability = `dcap_${randomBytes(32).toString('base64url')}`
-  this.db
-    .prepare(
-      `UPDATE dispatch_contexts
-       SET capability_hash = ?, assignee_pane_key = ?, process_incarnation = ?,
-           capability_revoked_at = NULL
-       WHERE id = ?`
-    )
-    .run(
-      hashDispatchCapability(capability),
-      params.paneKey,
-      params.processIncarnation,
-      params.dispatchId
-    )
+  // Rebinding authority and fencing the previous consumer must commit together.
+  const transaction = beginDispatchAuthorityTransaction(this.db)
+  try {
+    const generation = getPersistedSchemaCapabilities(this.db).dispatchConsumerGeneration
+    const result = this.db
+      .prepare(
+        `UPDATE dispatch_contexts
+         SET capability_hash = ?, assignee_pane_key = ?, process_incarnation = ?,
+             capability_revoked_at = NULL
+             ${generation ? ', consumer_generation = consumer_generation + 1' : ''}
+         WHERE id = ? AND status IN ('pending', 'dispatched')`
+      )
+      .run(
+        hashDispatchCapability(capability),
+        params.paneKey,
+        params.processIncarnation,
+        params.dispatchId
+      )
+    if (result.changes !== 1) {
+      throw new OrchestrationError(
+        'dispatch_inactive',
+        `Dispatch ${params.dispatchId} is not active.`
+      )
+    }
+    if (generation) {
+      this.fenceOutstandingDispatchDelivery({ dispatchId: params.dispatchId, source: 'local' })
+    }
+    this.rebindWorkerTerminalResourceStatement({
+      dispatchId: params.dispatchId,
+      paneKey: params.paneKey,
+      processIncarnation: params.processIncarnation,
+      endpointId: this.getWorkerDispatch(params.dispatchId)?.runtime_epoch
+    })
+    transaction.commit()
+  } catch (error) {
+    transaction.rollback()
+    throw error
+  }
   return capability
 }
 

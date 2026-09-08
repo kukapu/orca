@@ -69,16 +69,22 @@ export const ORCHESTRATION_WORKER_OBSERVATION_HANDLERS: Record<string, CommandHa
       dispatch: getRequiredStringFlag(flags, 'dispatch')
     })
     printResult(result, json, (value) => {
-      const base = `${value.dispatch.id} task=${value.dispatch.task_id} [${value.worker.state}] stage=${value.worker.stage}`
+      const lines = [
+        `${value.dispatch.id} task=${value.dispatch.task_id} [${value.worker.state}] stage=${value.worker.stage}`
+      ]
       // Why: absent means unknown on older runtimes, distinct from an evaluated null wait.
       if (value.observation === undefined || !('agentWait' in value.observation)) {
-        return `${base}\nInteractive wait: unknown (not evaluated)`
+        lines.push('Interactive wait: unknown (not evaluated)')
+      } else if (value.observation.agentWait) {
+        const wait = value.observation.agentWait
+        lines.push(
+          `Waiting on a human: ${wait.reason ?? 'interactive prompt'} (via ${wait.source})`
+        )
+      } else {
+        lines.push('Interactive wait: none')
       }
-      const wait = value.observation.agentWait
-      const waitLine = wait
-        ? `Waiting on a human: ${wait.reason ?? 'interactive prompt'} (via ${wait.source})`
-        : 'Interactive wait: none'
-      return `${base}\n${waitLine}\nObserved options: ${formatObservedOptions(value.observation.observedOptions)}`
+      lines.push(`Observed options: ${formatObservedOptions(value.observation?.observedOptions)}`)
+      return lines.join('\n')
     })
   },
 

@@ -242,6 +242,8 @@ orca orchestration worker-start --task <task_id> --worktree current --agent pi -
 
 `--effort` requires `--model`, and neither option can combine with `--terminal`. A connected worker server must advertise launch-preference support before Orca forwards either option.
 
+OpenCode accepts nested `provider/model` ids; keep the full id returned by the provider. OpenCode does not support launch-time `--effort`; omit it until OpenCode exposes a launch-time variant flag.
+
 For a new worktree, setup runs by default and agent-first creation reuses the returned startup agent terminal:
 
 ```bash

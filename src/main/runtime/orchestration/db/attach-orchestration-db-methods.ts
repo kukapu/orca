@@ -28,6 +28,7 @@ import { attachLegacyWorkerCompletion } from './legacy/legacy-worker-completion'
 import { attachDirectMailboxRouting } from './messages/direct-mailbox-routing'
 import { attachForeignDirectMailboxRouting } from './messages/foreign-direct-mailbox-routing'
 import { attachMessageInbox } from './messages/message-inbox'
+import { attachDispatchMailboxDelivery } from './messages/dispatch-mailbox-delivery'
 import { attachMessageInsert } from './messages/message-insert'
 import { attachMutationReceiptStore } from './mutation-receipts/mutation-receipt-store'
 import { attachQuestionThreads } from './questions/question-threads'
@@ -86,6 +87,7 @@ export function attachOrchestrationDbMethods(ctor: { prototype: object }): void 
   attachRunDelivery(ctor)
   attachMessageInsert(ctor)
   attachMessageInbox(ctor)
+  attachDispatchMailboxDelivery(ctor)
   attachDirectMailboxRouting(ctor)
   attachForeignDirectMailboxRouting(ctor)
   attachQuestionThreads(ctor)

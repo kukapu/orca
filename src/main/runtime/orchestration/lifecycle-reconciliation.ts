@@ -1,6 +1,7 @@
 import type { OrchestrationDb } from './db'
 import type { MessageRow, WorkerReportOutcome } from './types'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
+import { workerReportObservation } from './worker-report-observation'
 
 // Why: the tab half can change on pane break-out, while opaque legacy keys
 // have no safe equivalence beyond exact equality.
@@ -289,7 +290,8 @@ function reconcileWorkerDoneMessage(
     taskId,
     dispatchId,
     outcome: outcome as WorkerReportOutcome,
-    result
+    result,
+    observation: workerReportObservation(msg)
   })
   if (settlement.action === 'rejected') {
     return rejectLifecycleMessage(db, msg, settlement.code, settlement.reason, onLog)

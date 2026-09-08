@@ -3,9 +3,20 @@ import type { OrchestrationDb } from '../orchestration-db'
 
 // ── Lifecycle ──
 
-export function runResetTransaction(this: OrchestrationDb, statements: string): void {
+export function runResetTransaction(
+  this: OrchestrationDb,
+  statements: string,
+  additionalTables: readonly ('attempt_observation_facts' | 'structured_pointer_operations')[] = []
+): void {
   this.db.exec('BEGIN IMMEDIATE')
   try {
+    for (const table of additionalTables) {
+      if (
+        this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)
+      ) {
+        this.db.exec(`DELETE FROM ${table}`)
+      }
+    }
     this.db.exec(statements)
     this.db.exec('COMMIT')
   } catch (error) {
@@ -20,7 +31,8 @@ export function runResetTransaction(this: OrchestrationDb, statements: string): 
 
 export function resetAll(this: OrchestrationDb): void {
   // Why: retain mutation receipts so a lost reset response cannot replay as a new mutation.
-  this.runResetTransaction(`
+  this.runResetTransaction(
+    `
     DELETE FROM coordinator_runs;
     DELETE FROM decision_gates;
     DELETE FROM remote_questions;
@@ -43,14 +55,17 @@ export function resetAll(this: OrchestrationDb): void {
     DELETE FROM runs;
     INSERT INTO runs (id, objective, home_database, consumer_generation, legacy)
       VALUES ('${LEGACY_RUN_ID}', 'Legacy orchestration state (inspect only)', 'this_database', 0, 1);
-  `)
+  `,
+    ['attempt_observation_facts', 'structured_pointer_operations']
+  )
   this.hasAnyDispatchContextsCache = undefined
 }
 
 export function resetTasks(this: OrchestrationDb): void {
   // Why: messages survive this scope, so question threads are closed rather than deleted — an orphaned
   // question message would otherwise answer as a generic reply while legacy acknowledgment rejects it.
-  this.runResetTransaction(`
+  this.runResetTransaction(
+    `
     DELETE FROM coordinator_runs;
     DELETE FROM decision_gates;
     DELETE FROM remote_questions;
@@ -69,18 +84,23 @@ export function resetTasks(this: OrchestrationDb): void {
     DELETE FROM worker_dispatches;
     DELETE FROM dispatch_contexts;
     DELETE FROM tasks;
-  `)
+  `,
+    ['attempt_observation_facts', 'structured_pointer_operations']
+  )
   this.hasAnyDispatchContextsCache = undefined
 }
 
 export function resetMessages(this: OrchestrationDb): void {
   // Why: federation_relay_items is deliberately kept — relay rows carry contiguous cross-server cursors, not just inbox history.
-  this.runResetTransaction(`
+  this.runResetTransaction(
+    `
     DELETE FROM legacy_mail_receipts;
     DELETE FROM question_threads;
     DELETE FROM deliveries;
     DELETE FROM messages;
-  `)
+  `,
+    ['structured_pointer_operations']
+  )
 }
 
 export type OrchestrationResetMethods = {

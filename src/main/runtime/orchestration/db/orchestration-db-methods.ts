@@ -28,6 +28,7 @@ import type { LegacyWorkerCompletionMethods } from './legacy/legacy-worker-compl
 import type { DirectMailboxRoutingMethods } from './messages/direct-mailbox-routing'
 import type { ForeignDirectMailboxRoutingMethods } from './messages/foreign-direct-mailbox-routing'
 import type { MessageInboxMethods } from './messages/message-inbox'
+import type { DispatchMailboxDeliveryMethods } from './messages/dispatch-mailbox-delivery'
 import type { MessageInsertMethods } from './messages/message-insert'
 import type { MutationReceiptStoreMethods } from './mutation-receipts/mutation-receipt-store'
 import type { QuestionThreadsMethods } from './questions/question-threads'
@@ -85,6 +86,7 @@ export type OrchestrationDbMethods = CreateTablesMethods &
   RunDeliveryMethods &
   MessageInsertMethods &
   MessageInboxMethods &
+  DispatchMailboxDeliveryMethods &
   DirectMailboxRoutingMethods &
   ForeignDirectMailboxRoutingMethods &
   QuestionThreadsMethods &

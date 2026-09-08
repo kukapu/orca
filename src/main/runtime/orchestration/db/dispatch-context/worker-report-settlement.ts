@@ -3,6 +3,8 @@ import type { OrchestrationDb } from '../orchestration-db'
 import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-verification'
 import { settleActiveDispatchesForTask } from './dispatch-completion'
 import { getActiveDispatchForTask } from './task-dispatch-reconciliation'
+import type { WorkerReportObservation } from '../../worker-report-observation'
+import { recordAcceptedWorkerReportFact } from '../accepted-worker-report-fact'
 
 export function settleWorkerReport(
   this: OrchestrationDb,
@@ -11,6 +13,7 @@ export function settleWorkerReport(
     dispatchId: string
     outcome: WorkerReportOutcome
     result: string
+    observation?: WorkerReportObservation
   }
 ): WorkerReportSettlement {
   this.db.exec('BEGIN IMMEDIATE')
@@ -31,6 +34,7 @@ export function settleWorkerReportInTransaction(
     dispatchId: string
     outcome: WorkerReportOutcome
     result: string
+    observation?: WorkerReportObservation
   }
 ): WorkerReportSettlement {
   const task = this.getTask(params.taskId)
@@ -69,12 +73,20 @@ export function settleWorkerReportInTransaction(
     dispatch.status === expectedDispatchStatus &&
     task.status === expectedTaskStatus
   ) {
+    recordAcceptedWorkerReportFact(this, params)
     return { action: 'settled', outcome: params.outcome, duplicate: true }
   }
+  const reportingWorker = this.getWorkerDispatch(params.dispatchId)
+  const reconnectingStart =
+    (dispatch.status === 'pending' || dispatch.status === 'dispatched') &&
+    task.status === 'blocked' &&
+    reportingWorker?.state === 'start_unknown'
   const previous = settledByUnobservedPrompt
-    ? { status: 'failed', workerState: 'failed' }
-    : { status: 'dispatched', workerState: 'ready' }
-  if (dispatch.status !== previous.status || task.status !== previous.status) {
+    ? { dispatchStatus: 'failed', taskStatus: 'failed', workerState: 'failed' }
+    : reconnectingStart
+      ? { dispatchStatus: dispatch.status, taskStatus: 'blocked', workerState: 'start_unknown' }
+      : { dispatchStatus: 'dispatched', taskStatus: 'dispatched', workerState: 'ready' }
+  if (dispatch.status !== previous.dispatchStatus || task.status !== previous.taskStatus) {
     return {
       action: 'rejected',
       code: 'inactive_dispatch',
@@ -99,7 +111,6 @@ export function settleWorkerReportInTransaction(
       reason: `Task ${params.taskId} still has active supervised Dispatch ${conflictingWorker.id}; stop or settle it before completing ${params.dispatchId}.`
     }
   }
-  const reportingWorker = this.getWorkerDispatch(params.dispatchId)
   const latest = getActiveDispatchForTask(this, params.taskId)
   if (!reportingWorker && latest?.id !== params.dispatchId) {
     return {
@@ -129,7 +140,7 @@ export function settleWorkerReportInTransaction(
       expectedDispatchStatus,
       params.result,
       params.dispatchId,
-      previous.status
+      previous.dispatchStatus
     )
   const taskUpdate = this.db
     .prepare(
@@ -137,7 +148,7 @@ export function settleWorkerReportInTransaction(
        SET status = ?, result = ?, completed_at = datetime('now')
        WHERE id = ? AND status = ?`
     )
-    .run(expectedTaskStatus, params.result, params.taskId, previous.status)
+    .run(expectedTaskStatus, params.result, params.taskId, previous.taskStatus)
   if (dispatchUpdate.changes !== 1 || taskUpdate.changes !== 1) {
     this.db.exec('ROLLBACK TO settle_worker_report')
     this.db.exec('RELEASE settle_worker_report')
@@ -176,6 +187,7 @@ export function settleWorkerReportInTransaction(
   if (params.outcome === 'succeeded') {
     this.promoteReadyTasks(params.taskId)
   }
+  recordAcceptedWorkerReportFact(this, params)
   this.db.exec('RELEASE settle_worker_report')
   return { action: 'settled', outcome: params.outcome, duplicate: false }
 }

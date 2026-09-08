@@ -8,6 +8,10 @@ import {
 } from './runs/run-coordinator-mail-routing'
 import { createTables } from './schema/create-tables'
 import { migrate } from './schema/migrate'
+import {
+  assertPersistedSchemaCompatibility,
+  assertPersistedSchemaFileCompatibility
+} from './schema/persisted-schema-compatibility'
 
 class OrchestrationDbCore {
   db: Database.Database
@@ -22,15 +26,24 @@ class OrchestrationDbCore {
   localMutationCallerFingerprint: string | undefined
 
   constructor(dbPath: (string & {}) | ':memory:') {
+    assertPersistedSchemaFileCompatibility(dbPath)
     this.db = new Database(dbPath)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('synchronous = NORMAL')
-    this.db.pragma('busy_timeout = 5000')
-    createTables.call(this as unknown as OrchestrationDb)
-    migrate.call(this as unknown as OrchestrationDb)
-    createCoordinatorMailRoutingTrigger.call(this as unknown as OrchestrationDb)
-    rememberCurrentRunCoordinatorHandles.call(this as unknown as OrchestrationDb)
-    hardenOrchestrationDatabaseFiles(dbPath)
+    try {
+      const profile = assertPersistedSchemaCompatibility(this.db)
+      this.db.pragma('synchronous = NORMAL')
+      this.db.pragma('busy_timeout = 5000')
+      if (profile === 'stable30') {
+        this.db.pragma('journal_mode = WAL')
+        createTables.call(this as unknown as OrchestrationDb)
+        migrate.call(this as unknown as OrchestrationDb)
+        createCoordinatorMailRoutingTrigger.call(this as unknown as OrchestrationDb)
+      }
+      rememberCurrentRunCoordinatorHandles.call(this as unknown as OrchestrationDb)
+      hardenOrchestrationDatabaseFiles(dbPath)
+    } catch (error) {
+      this.db.close()
+      throw error
+    }
   }
 
   close(): void {

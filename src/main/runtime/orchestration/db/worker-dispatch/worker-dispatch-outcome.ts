@@ -107,13 +107,7 @@ export function markWorkerStartUnknown(
          WHERE dispatch_id = ?`
       )
       .run(stage, reason, dispatchId)
-    this.db
-      .prepare(
-        `UPDATE dispatch_contexts
-         SET capability_revoked_at = COALESCE(capability_revoked_at, datetime('now'))
-         WHERE id = ?`
-      )
-      .run(dispatchId)
+    // Unknown start is not definitive failure; preserve authority for the worker's late report.
     this.db.prepare("UPDATE tasks SET status = 'blocked' WHERE id = ?").run(dispatch.task_id)
     this.closeQuestionsForDispatch(dispatchId)
     this.db.exec('COMMIT')

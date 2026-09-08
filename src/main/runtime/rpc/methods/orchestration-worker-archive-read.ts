@@ -2,6 +2,7 @@ import type {
   OrchestrationWorkerReadResult,
   OrchestrationWorkerReadSource
 } from '../../../../shared/orchestration-worker-output'
+import type { PtyLivenessVerdict } from '../../../../shared/pty-liveness-verdict'
 import type { OrchestrationDb } from '../../orchestration/db'
 import { OrchestrationError } from '../../orchestration/orchestration-error'
 import type {
@@ -23,9 +24,7 @@ import { readWorkerTranscript } from '../../orchestration/worker-transcript-read
 
 const ARCHIVED_TERMINAL_PAGE_LINES = 2_000
 
-// Serves the frozen output source after the live PTY is gone. Transcript pins read the exact
-// provider transcript directly; terminal archives page the stored redacted tail. Cursors stay
-// Dispatch-scoped and source-pinned exactly like live reads.
+// Frozen output does not prove process exit; cursors remain Dispatch-scoped and source-pinned.
 export async function readArchivedWorkerOutput(args: {
   db: OrchestrationDb
   dispatchId: string
@@ -34,6 +33,8 @@ export async function readArchivedWorkerOutput(args: {
   source?: OrchestrationWorkerReadSource
   cursor?: string | number
   limit?: number
+  // Owning-host process evidence, independent of the archived bytes.
+  liveness?: PtyLivenessVerdict['status']
 }): Promise<OrchestrationWorkerReadResult> {
   const archive = args.db.getWorkerTerminalArchive(args.dispatchId)
   if (!archive) {
@@ -41,6 +42,15 @@ export async function readArchivedWorkerOutput(args: {
       'archive_unavailable',
       `Dispatch ${args.dispatchId} was released without a preserved output archive.`
     )
+  }
+  if (archive.kind === 'structured_journal') {
+    if (args.source === 'terminal') {
+      throw new OrchestrationError(
+        'archive_unavailable',
+        'The persisted worker journal has no PTY output.'
+      )
+    }
+    return readFrozenTranscript(args, archive, parsePersistedStructuredJournal(archive.content))
   }
   if (archive.kind === 'transcript_pin') {
     if (args.source === 'terminal') {
@@ -56,6 +66,12 @@ export async function readArchivedWorkerOutput(args: {
       ? readFrozenTranscript(args, archive, content)
       : readLegacyPinnedTranscript(args, content)
   }
+  if (archive.kind !== 'terminal_tail') {
+    throw new OrchestrationError(
+      'archive_unavailable',
+      'The persisted worker archive kind is unsupported.'
+    )
+  }
   if (args.source === 'transcript') {
     throw new OrchestrationError(
       'transcript_required',
@@ -65,14 +81,47 @@ export async function readArchivedWorkerOutput(args: {
   return readArchivedTerminalTail(args, archive)
 }
 
+type PersistedStructuredJournal = Omit<WorkerTranscriptSnapshotArchive, 'version'> & { version: 1 }
+
+function parsePersistedStructuredJournal(content: string): PersistedStructuredJournal {
+  let value: Partial<PersistedStructuredJournal> | null
+  try {
+    value = JSON.parse(content)
+  } catch {
+    value = null
+  }
+  if (
+    !value ||
+    value.version !== 1 ||
+    typeof value.agent !== 'string' ||
+    !value.agent.trim() ||
+    typeof value.processIncarnation !== 'string' ||
+    !Array.isArray(value.messages) ||
+    !value.messages.every(
+      (message) => message && typeof message === 'object' && Array.isArray(message.blocks)
+    ) ||
+    typeof value.limited !== 'boolean' ||
+    !Array.isArray(value.warnings) ||
+    !value.warnings.every((warning) => typeof warning === 'string')
+  ) {
+    throw new OrchestrationError(
+      'archive_unavailable',
+      'The persisted structured journal is not a valid version 1 archive.'
+    )
+  }
+  return value as PersistedStructuredJournal
+}
+
 function readFrozenTranscript(
   args: Parameters<typeof readArchivedWorkerOutput>[0],
   archive: WorkerTerminalArchiveRow,
-  snapshot: WorkerTranscriptSnapshotArchive
+  snapshot: WorkerTranscriptSnapshotArchive | PersistedStructuredJournal
 ): OrchestrationWorkerReadResult {
   const cursor = decodeWorkerOutputCursor(args.cursor, args.dispatchId)
   const sourceIdentity = createWorkerOutputSourceIdentity([
-    'released-transcript-snapshot',
+    archive.kind === 'structured_journal'
+      ? 'persisted-structured-journal'
+      : 'released-transcript-snapshot',
     args.resource.id,
     snapshot.processIncarnation,
     archive.created_at
@@ -91,11 +140,11 @@ function readFrozenTranscript(
     transcript: {
       messages: snapshot.messages.slice(start, end),
       nextCursor,
-      limited: end < snapshot.messages.length,
+      limited: snapshot.limited || end < snapshot.messages.length,
       returnedMessageCount: end - start
     },
     cursor: nextCursor,
-    status: { worker: args.workerState, terminal: 'exited' },
+    status: archivedStatus(args),
     fallbackReason: null,
     warnings: [
       ...snapshot.warnings,
@@ -160,7 +209,7 @@ async function readLegacyPinnedTranscript(
       returnedMessageCount: transcript.messages.length
     },
     cursor: nextCursor,
-    status: { worker: args.workerState, terminal: 'exited' },
+    status: archivedStatus(args),
     fallbackReason: null,
     warnings: transcript.warnings,
     archived: true
@@ -198,13 +247,14 @@ function readArchivedTerminalTail(
     end < content.lines.length
       ? encodeWorkerOutputCursor(args.dispatchId, 'terminal', sourceIdentity, end)
       : null
+  const status = archivedStatus(args)
   return {
     dispatchId: args.dispatchId,
     source: 'terminal',
     sourceIdentity,
     terminal: {
       handle: args.resource.terminal_handle,
-      status: 'exited',
+      status: status.terminal,
       tail,
       ...(!cursor && content.draft ? { draft: content.draft } : {}),
       truncated: content.truncated,
@@ -212,10 +262,25 @@ function readArchivedTerminalTail(
       returnedLineCount: tail.length
     },
     cursor: nextCursor,
-    status: { worker: args.workerState, terminal: 'exited' },
+    status,
     fallbackReason: null,
     warnings: content.warnings,
     archived: true
+  }
+}
+
+function archivedStatus(args: Parameters<typeof readArchivedWorkerOutput>[0]): {
+  worker: string
+  terminal: 'running' | 'exited' | 'unknown'
+  liveness: PtyLivenessVerdict['status']
+} {
+  // Only a settled close proves exit; an in-flight or unknown release merely preserves bytes.
+  const liveness =
+    args.liveness ?? (args.resource.release_state === 'released' ? 'exited' : 'unverifiable')
+  return {
+    worker: args.workerState,
+    terminal: liveness === 'live' ? 'running' : liveness === 'exited' ? 'exited' : 'unknown',
+    liveness
   }
 }
 

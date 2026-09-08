@@ -6,6 +6,7 @@ import type {
 } from '../../worker-terminal-ownership'
 import { OrchestrationError } from '../../orchestration-error'
 import type { OrchestrationDb } from '../orchestration-db'
+import { isPersistedStructuredWorkerResource } from '../../worker-terminal-ownership'
 
 export function storeWorkerTerminalArchive(
   this: OrchestrationDb,
@@ -16,12 +17,17 @@ export function storeWorkerTerminalArchive(
     content: string
   }
 ): void {
+  const resource = this.getWorkerTerminalResource(params.resourceId)
+  if (resource && isPersistedStructuredWorkerResource(resource)) {
+    return
+  }
   this.db
     .prepare(
       `INSERT INTO worker_terminal_archives (dispatch_id, resource_id, kind, content)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(dispatch_id) DO UPDATE SET
-         resource_id = excluded.resource_id, kind = excluded.kind, content = excluded.content`
+         resource_id = excluded.resource_id, kind = excluded.kind, content = excluded.content
+       WHERE worker_terminal_archives.kind != 'structured_journal'`
     )
     .run(params.dispatchId, params.resourceId, params.kind, params.content)
 }
@@ -47,6 +53,10 @@ export function commitWorkerTerminalArchiveForRelease(
       )
     }
     if (
+      !isPersistedStructuredWorkerResource(
+        resource,
+        this.getWorkerTerminalArchive(params.dispatchId)
+      ) &&
       resource.owner_dispatch_id === params.dispatchId &&
       resource.ownership_state === 'owned' &&
       resource.release_state === 'requested'
@@ -98,6 +108,16 @@ export function settleWorkerTerminalRelease(
   this: OrchestrationDb,
   resourceId: string
 ): WorkerTerminalResourceRow {
+  const resource = this.getWorkerTerminalResource(resourceId)
+  if (
+    resource &&
+    isPersistedStructuredWorkerResource(
+      resource,
+      this.getWorkerTerminalArchive(resource.owner_dispatch_id)
+    )
+  ) {
+    return resource
+  }
   this.db
     .prepare(
       `UPDATE worker_terminal_resources
@@ -115,6 +135,16 @@ export function markWorkerTerminalReleaseUnknown(
   resourceId: string,
   reason: string
 ): WorkerTerminalResourceRow {
+  const resource = this.getWorkerTerminalResource(resourceId)
+  if (
+    resource &&
+    isPersistedStructuredWorkerResource(
+      resource,
+      this.getWorkerTerminalArchive(resource.owner_dispatch_id)
+    )
+  ) {
+    return resource
+  }
   this.db
     .prepare(
       `UPDATE worker_terminal_resources
@@ -130,6 +160,16 @@ export function revertWorkerTerminalReleaseToRetained(
   resourceId: string,
   reason: WorkerTerminalRetainedReason
 ): WorkerTerminalResourceRow {
+  const resource = this.getWorkerTerminalResource(resourceId)
+  if (
+    resource &&
+    isPersistedStructuredWorkerResource(
+      resource,
+      this.getWorkerTerminalArchive(resource.owner_dispatch_id)
+    )
+  ) {
+    return resource
+  }
   this.db
     .prepare(
       `UPDATE worker_terminal_resources
@@ -166,6 +206,10 @@ export function retainWorkerTerminalResource(
       this.db.exec('COMMIT')
       return { disposition: 'no_owned_resource', resource: null }
     }
+    if (isPersistedStructuredWorkerResource(resource, this.getWorkerTerminalArchive(dispatchId))) {
+      this.db.exec('COMMIT')
+      return { disposition: 'retained', resource }
+    }
     if (resource.release_state === 'released') {
       this.db.exec('COMMIT')
       return { disposition: 'already_released', resource }
@@ -183,7 +227,11 @@ export function retainWorkerTerminalResource(
       this.db.exec('COMMIT')
       return { disposition: 'release_committed', resource: updated }
     }
-    this.db.prepare('DELETE FROM worker_terminal_archives WHERE dispatch_id = ?').run(dispatchId)
+    this.db
+      .prepare(
+        "DELETE FROM worker_terminal_archives WHERE dispatch_id = ? AND kind != 'structured_journal'"
+      )
+      .run(dispatchId)
     this.db.exec('COMMIT')
     return { disposition: 'retained', resource: updated }
   } catch (error) {

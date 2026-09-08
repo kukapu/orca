@@ -5,6 +5,8 @@ import { AGENT_PROMPT_STALLED_ERROR } from '../../../agent-prompt-submission-ver
 import { hashDispatchCapability } from '../dispatch-capability-hash'
 import { isEquivalentPaneKey } from '../pane-key-match'
 import type { OrchestrationDb } from '../orchestration-db'
+import { getPersistedSchemaCapabilities } from '../schema/persisted-schema-capabilities'
+import { beginDispatchAuthorityTransaction } from '../persisted-dispatch-identity'
 
 export function prepareRemoteAttachmentAuthority(
   this: OrchestrationDb,
@@ -16,52 +18,108 @@ export function prepareRemoteAttachmentAuthority(
     terminalHandle: string
     setupState: string
     effects: unknown[]
+    hostScope?: string | null
+    terminalOwnership?: 'created' | 'external'
   }
 ): string {
-  const attachment = this.getRemoteDispatchAttachment(params.dispatchId)
-  if (!attachment || attachment.state !== 'starting') {
-    throw new OrchestrationError(
-      'dispatch_inactive',
-      `Remote Dispatch ${params.dispatchId} is not starting.`
-    )
-  }
-  const capability = `dcap_${randomBytes(32).toString('base64url')}`
-  const result = this.db
-    .prepare(
-      `UPDATE remote_dispatch_attachments
-       SET stage = 'authority_attached', capability_hash = ?, pane_key = ?,
-           process_incarnation = ?, worktree_id = ?, terminal_handle = ?, setup_state = ?,
-           effects = ?, residual_resources = ?, updated_at = datetime('now')
-       WHERE dispatch_id = ? AND state = 'starting'`
-    )
-    .run(
-      hashDispatchCapability(capability),
-      params.paneKey,
-      params.processIncarnation,
-      params.worktreeId,
-      params.terminalHandle,
-      params.setupState,
-      JSON.stringify(params.effects),
-      JSON.stringify(
-        params.effects.filter((effect) =>
-          Boolean(
-            effect &&
-            typeof effect === 'object' &&
-            ((effect as { action?: string }).action?.startsWith('created') ||
-              (effect as { action?: string }).action === 'reused_agent_terminal')
+  const transaction = beginDispatchAuthorityTransaction(this.db)
+  try {
+    const attachment = this.getRemoteDispatchAttachment(params.dispatchId)
+    if (!attachment || attachment.state !== 'starting') {
+      throw new OrchestrationError(
+        'dispatch_inactive',
+        `Remote Dispatch ${params.dispatchId} is not starting.`
+      )
+    }
+    // Stopping fences asks, not occupancy: the process may still be live.
+    const active = this.findOccupyingRemoteAttachmentForPane(params.paneKey)
+    if (active && active.dispatch_id !== params.dispatchId) {
+      throw new OrchestrationError(
+        'dispatch_inactive',
+        `Terminal ${params.terminalHandle} already has active remote Dispatch ${active.dispatch_id}.`
+      )
+    }
+    const capability = `dcap_${randomBytes(32).toString('base64url')}`
+    const generation = getPersistedSchemaCapabilities(this.db).remoteConsumerGeneration
+    const result = this.db
+      .prepare(
+        `UPDATE remote_dispatch_attachments
+         SET stage = 'authority_attached', capability_hash = ?, pane_key = ?,
+             process_incarnation = ?, worktree_id = ?, terminal_handle = ?, setup_state = ?,
+             effects = ?, residual_resources = ?, updated_at = datetime('now')
+             ${generation ? ', consumer_generation = consumer_generation + 1' : ''}
+         WHERE dispatch_id = ? AND state = 'starting'`
+      )
+      .run(
+        hashDispatchCapability(capability),
+        params.paneKey,
+        params.processIncarnation,
+        params.worktreeId,
+        params.terminalHandle,
+        params.setupState,
+        JSON.stringify(params.effects),
+        JSON.stringify(
+          params.effects.filter((effect) =>
+            Boolean(
+              effect &&
+              typeof effect === 'object' &&
+              ((effect as { action?: string }).action?.startsWith('created') ||
+                (effect as { action?: string }).action === 'reused_agent_terminal')
+            )
           )
-        )
-      ),
-      params.dispatchId
-    )
-  // Why: without this the caller keeps a capability whose hash was never stored, surfacing later as an authority mismatch.
-  if (result.changes !== 1) {
-    throw new OrchestrationError(
-      'dispatch_inactive',
-      `Remote Dispatch ${params.dispatchId} is not starting.`
-    )
+        ),
+        params.dispatchId
+      )
+    // Never return a capability whose hash was not stored.
+    if (result.changes !== 1) {
+      throw new OrchestrationError(
+        'dispatch_inactive',
+        `Remote Dispatch ${params.dispatchId} is not starting.`
+      )
+    }
+    if (generation) {
+      this.fenceOutstandingDispatchDelivery({ dispatchId: params.dispatchId, source: 'remote' })
+    }
+    this.rebindWorkerTerminalResourceStatement({ ...params, endpointId: attachment.runtime_epoch })
+    if (params.terminalOwnership && !this.getWorkerTerminalResourceByOwner(params.dispatchId)) {
+      const resource =
+        params.terminalOwnership === 'external'
+          ? this.findTransferableWorkerTerminalResource({
+              terminalHandle: params.terminalHandle,
+              paneKey: params.paneKey,
+              processIncarnation: params.processIncarnation,
+              hostScope: params.hostScope ?? null
+            })
+          : undefined
+      const identity = {
+        terminalHandle: params.terminalHandle,
+        paneKey: params.paneKey,
+        processIncarnation: params.processIncarnation,
+        endpointId: attachment.runtime_epoch,
+        endpointIncarnation: params.processIncarnation,
+        hostScope: params.hostScope ?? null
+      }
+      if (resource) {
+        this.transferWorkerTerminalResourceStatement({
+          resourceId: resource.id,
+          toDispatchId: params.dispatchId,
+          ...identity
+        })
+      } else {
+        this.createWorkerTerminalResourceStatement({
+          dispatchId: params.dispatchId,
+          worktreeId: params.worktreeId,
+          ...identity,
+          ownership: params.terminalOwnership === 'created' ? 'owned' : 'external'
+        })
+      }
+    }
+    transaction.commit()
+    return capability
+  } catch (error) {
+    transaction.rollback()
+    throw error
   }
-  return capability
 }
 
 export function markRemoteAttachmentReady(

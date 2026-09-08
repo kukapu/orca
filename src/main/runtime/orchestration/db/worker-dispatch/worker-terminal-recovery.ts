@@ -8,6 +8,7 @@ import { OrchestrationError } from '../../orchestration-error'
 import { DISPATCH_CIRCUIT_BREAK_FAILURES } from '../dispatch-context/dispatch-circuit-breaker'
 import type { OrchestrationDb } from '../orchestration-db'
 import { reconcileTaskAfterDispatchInterruption } from '../dispatch-context/task-dispatch-reconciliation'
+import { isPersistedStructuredWorkerIdentity } from '../../persisted-structured-worker-identity'
 
 export function listLegacyWorkerTerminalRecoveryRows(
   this: OrchestrationDb
@@ -38,7 +39,15 @@ export function reconcileMissingWorkerTerminal(
     if (!dispatch || !worker) {
       throw new OrchestrationError('dispatch_not_found', `Dispatch ${dispatchId} was not found.`)
     }
-    if (['succeeded', 'failed', 'stopped', 'abandoned'].includes(worker.state)) {
+    if (
+      isPersistedStructuredWorkerIdentity(
+        dispatch.process_incarnation,
+        dispatch.assignee_handle,
+        dispatch.assignee_pane_key,
+        worker.agent_terminal_handle
+      ) ||
+      ['succeeded', 'failed', 'stopped', 'abandoned'].includes(worker.state)
+    ) {
       this.db.exec('COMMIT')
       return worker
     }

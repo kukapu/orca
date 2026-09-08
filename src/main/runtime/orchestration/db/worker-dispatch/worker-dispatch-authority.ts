@@ -2,6 +2,11 @@ import { randomBytes } from 'node:crypto'
 import { OrchestrationError } from '../../orchestration-error'
 import { hashDispatchCapability } from '../dispatch-capability-hash'
 import type { OrchestrationDb } from '../orchestration-db'
+import { getPersistedSchemaCapabilities } from '../schema/persisted-schema-capabilities'
+import {
+  beginDispatchAuthorityTransaction,
+  persistedDispatchIdentityFields
+} from '../persisted-dispatch-identity'
 
 export function prepareStartingWorkerAuthority(
   this: OrchestrationDb,
@@ -21,7 +26,7 @@ export function prepareStartingWorkerAuthority(
     terminalOwnership?: 'created' | 'external'
   }
 ): string {
-  this.db.exec('BEGIN IMMEDIATE')
+  const transaction = beginDispatchAuthorityTransaction(this.db)
   try {
     // Why: read inside the transaction so the guarded UPDATEs below cannot lose a race with a concurrent state change.
     const dispatch = this.getDispatchContextById(params.dispatchId)
@@ -49,12 +54,21 @@ export function prepareStartingWorkerAuthority(
       )
     }
     const capability = `dcap_${randomBytes(32).toString('base64url')}`
+    const generation = getPersistedSchemaCapabilities(this.db).dispatchConsumerGeneration
+    const identity = persistedDispatchIdentityFields(
+      this.db,
+      'dispatch_contexts',
+      params.hostScope !== undefined ? { host_scope: params.hostScope } : {}
+    )
+    const endpointId = worker.runtime_epoch ?? null
     const contextUpdate = this.db
       .prepare(
         `UPDATE dispatch_contexts
          SET assignee_handle = ?, assignee_pane_key = ?, process_incarnation = ?,
              capability_hash = ?, launch_token_hash = COALESCE(launch_token_hash, ?),
              capability_revoked_at = NULL
+             ${generation ? ', consumer_generation = consumer_generation + 1' : ''}
+             ${identity.map(([column]) => `, ${column} = ?`).join('')}
          WHERE id = ? AND status = 'pending'`
       )
       .run(
@@ -63,6 +77,7 @@ export function prepareStartingWorkerAuthority(
         params.processIncarnation,
         hashDispatchCapability(capability),
         params.launchTokenHash ?? null,
+        ...identity.map(([, value]) => value),
         params.dispatchId
       )
     if (contextUpdate.changes !== 1) {
@@ -70,6 +85,9 @@ export function prepareStartingWorkerAuthority(
         'dispatch_inactive',
         `Dispatch ${params.dispatchId} is not starting.`
       )
+    }
+    if (generation) {
+      this.fenceOutstandingDispatchDelivery({ dispatchId: params.dispatchId, source: 'local' })
     }
     const workerUpdate = this.db
       .prepare(
@@ -101,6 +119,11 @@ export function prepareStartingWorkerAuthority(
         `Dispatch ${params.dispatchId} is not starting.`
       )
     }
+    this.rebindWorkerTerminalResourceStatement({
+      ...params,
+      terminalHandle: params.handle,
+      endpointId
+    })
     if (params.terminalOwnership && !this.getWorkerTerminalResourceByOwner(params.dispatchId)) {
       if (params.terminalOwnership === 'created') {
         this.createWorkerTerminalResourceStatement({
@@ -109,6 +132,8 @@ export function prepareStartingWorkerAuthority(
           terminalHandle: params.handle,
           paneKey: params.paneKey,
           processIncarnation: params.processIncarnation,
+          endpointId,
+          endpointIncarnation: params.processIncarnation,
           hostScope: params.hostScope,
           ownership: 'owned'
         })
@@ -126,6 +151,8 @@ export function prepareStartingWorkerAuthority(
             terminalHandle: params.handle,
             paneKey: params.paneKey,
             processIncarnation: params.processIncarnation,
+            endpointId,
+            endpointIncarnation: params.processIncarnation,
             hostScope: params.hostScope ?? null
           })
         } else {
@@ -135,16 +162,18 @@ export function prepareStartingWorkerAuthority(
             terminalHandle: params.handle,
             paneKey: params.paneKey,
             processIncarnation: params.processIncarnation,
+            endpointId,
+            endpointIncarnation: params.processIncarnation,
             hostScope: params.hostScope,
             ownership: 'external'
           })
         }
       }
     }
-    this.db.exec('COMMIT')
+    transaction.commit()
     return capability
   } catch (error) {
-    this.db.exec('ROLLBACK')
+    transaction.rollback()
     throw error
   }
 }

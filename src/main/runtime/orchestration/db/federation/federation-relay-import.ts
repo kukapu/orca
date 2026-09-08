@@ -7,6 +7,7 @@ import type {
 } from '../../types'
 import { OrchestrationError } from '../../orchestration-error'
 import type { OrchestrationDb } from '../orchestration-db'
+import { workerReportObservation } from '../../worker-report-observation'
 
 export function importFederatedRelayItem(
   this: OrchestrationDb,
@@ -95,7 +96,8 @@ export function importFederatedRelayItem(
         taskId: params.lifecycle.taskId,
         dispatchId: params.dispatchId,
         outcome: params.lifecycle.outcome,
-        result: params.lifecycle.result
+        result: params.lifecycle.result,
+        observation: workerReportObservation(message)
       })
       if (lifecycle.action === 'rejected' && !duplicate) {
         message = this.convertLifecycleMessageToRejection(
