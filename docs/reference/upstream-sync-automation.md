@@ -50,7 +50,12 @@ declarar exito «sin novedades» para ocultarlos.
 ## Precheck Sin Escrituras
 
 `config/scripts/upstream-release-precheck.mjs` consulta releases con `gh api` y
-metadata con `orca worktree list`. No hace fetch, no modifica el checkout principal
+metadata con la CLI instalada (`options.orcaCli`, ruta absoluta; default `orca`).
+En este host se fija `/home/kukapu/.local/bin/orca-ide`, fuera de los worktrees.
+El comando embebido fija tambien el Node24 existente por ruta absoluta: el PATH
+del servicio no contiene `node`. No modificar PATH global ni depender del login
+shell del coordinador. Verificar con HOME/PATH efectivos del servicio.
+No hace fetch, no modifica el checkout principal
 ni crea un worktree cuando no hay una nueva preparacion elegible.
 
 El configurador embebe un bundle ESM del precheck en el comando de la definicion.
@@ -60,7 +65,7 @@ worktree temporal. Las opciones embebidas fijan automationId, repoId y
 NO una afirmacion de que el fork antiguo estuviera basado exclusivamente en ese tag.
 
 Selecciona versiones desktop `vN.N.N`, excluye drafts/prereleases y ordena semver.
-Usa preparaciones terminadas con procedencia valida como umbral. Las releases del
+Usa preparaciones terminadas y manifiestos de release con procedencia valida como umbral. Las releases del
 fork no inventan otra fuente ni elevan por si solas el highwater: una publicacion
 sin inventariar posterior a la ultima fuente valida bloquea como
 `unknown-source-lineage` (tambien una revision kukapu.N mayor de la misma oficial).
@@ -68,12 +73,33 @@ Las entregas historicas anteriores no invalidan una fuente canonica posterior.
 Un draft para la misma version impide duplicarla. Paginacion acotada a diez paginas
 por repositorio; una respuesta incompleta, error o formato inesperado bloquea.
 Exit 0: nueva preparacion elegible; 1: sin trabajo o reconciliacion pendiente;
-2: error. Timeout exterior 240 segundos (hasta 21 comandos de 10 segundos).
+2: error. Timeout exterior 240 segundos (hasta 22 comandos de 10 segundos).
 El scheduler guarda la evidencia; no se convierte un error en novedad.
 Para lanzar exige fuente canonica al menos tan reciente como baselineTag; si falta,
 `canonical-source-required`. El baseline 197 NO permite bootstrap automatico.
-La reconstruccion 198 actual sigue supervisada y bloqueada hasta registrar su
-marker preparado correcto; este cambio de politica no la certifica.
+La reconstruccion 198 fue verificada, publicada e instalada; su manifiesto durable
+permite continuar aunque se retire el workspace de preparacion.
+
+### Procedencia Durable En GitHub
+
+Cada entrega terminada conserva `orca-release-provenance.json` como asset de su
+release del fork, incluso si la release sigue en draft. El precheck descarga como
+maximo UN manifiesto: el de mayor version oficial y revision kukapu.N que lo tenga.
+Un manifiesto seleccionado invalido bloquea; no se retrocede silenciosamente.
+
+Contrato: `schemaVersion=1`, `repository=kukapu/orca`,
+`upstreamRepository=stablyai/orca`, `state=published`, campos de procedencia C/P
+descritos abajo, `sourceTree` y `artifacts: [{name,size,sha256}]`. No incluir rutas
+locales, IDs de automatizacion, datos de instalacion privados ni secretos. El JSON
+no se incluye a si mismo en artifacts; puede referenciar los binarios, metadata de
+actualizacion y checksums ya subidos, sin inventariar assets ajenos.
+
+Se verifican size y digest SHA256 de GitHub contra los bytes originales del JSON
+antes de parsear (maximo64KiB), tag/repo/version y cada artefacto declarado contra
+los metadatos remotos uploaded/size/digest. Una fuente local contradictoria bloquea.
+Una entrega posterior sin inventariar tambien bloquea, aunque exista un manifiesto
+anterior valido. No hay descarga de binarios ni fan-out de un asset por release.
+Esta comprobacion no sustituye verificar los objetos Git y arboles antes de integrar.
 
 ### Preparaciones Persistentes
 
@@ -115,7 +141,10 @@ posteriores en main-kukapu. Su revision Git sigue siendo un gate del agente.
 
 Cualquier preparacion `preparing` o `blocked` impide abrir otra, tambien para una
 release posterior. Un worktree legacy sin marker exige reconciliacion supervisada.
-No eliminar estos registros al acabar: sustituyen un segundo ledger global.
+Mientras haya trabajo activo o bloqueado, no retirar el registro. Una preparacion
+publicada puede retirarse por el usuario solo despues de verificar su manifiesto
+remoto, preservar evidencia fuera y comprobar recuperacion sin su metadata local.
+No es necesario conservar un workspace temporal para siempre ni crear un ledger global.
 Un inventario incompleto o inaccesible bloquea, no prueba que no exista trabajo.
 
 El precheck es solo lectura, no un lock. El owner unico del scheduler serializa
@@ -161,6 +190,11 @@ supervisada. Revisar tambien cambios propios posteriores a la ultima publicacion
 si no estan clasificados, bloquear incluso sin release nueva. Solo sin cambios
 pendientes, release nueva ni recuperacion autorizada: informar y salir.
 No repetir build/pack ni declarar salida de procesos por falta de contacto.
+Recuperar procedencia de orca-release-provenance.json en la release del fork si
+el workspace anterior ya no existe. Validar sus bytes/size/digest y artefactos,
+repositorios y tags; despues verificar Git. No confiar en texto libre de las notas
+ni inventar fuente a partir del nombre de version. Usar la CLI instalada del host,
+no un out/cli dentro de otro checkout ni un shim temporal.
 
 3. Registrar antes de trabajo costoso la primera linea del comentario propio:
 orca-release-preparation:{"upstreamTag":"<tag>","upstreamOid":"<commit>","state":"preparing"}
@@ -172,7 +206,7 @@ inventario incompleto: bloqueo. No borrar reservas por antiguedad.
 
 4. Fijar TAG exacto validado vN.N.N y OID peeled con
 git ls-remote upstream "refs/tags/$TAG" "refs/tags/$TAG^{}".
-Fijar SOURCE_TAG/SOURCE_COMMIT del ultimo marker canonico y LAST_P de la ultima
+Fijar SOURCE_TAG/SOURCE_COMMIT del ultimo marker o manifiesto canonico y LAST_P de la ultima
 publicacion verificada (puede ser anterior a la fuente preparada seleccionada).
 Desde TU worktree, fetch acotado y tags nombrados, nunca todas las refs:
 git fetch --no-tags origin refs/heads/main-kukapu:refs/remotes/origin/main-kukapu
@@ -265,6 +299,15 @@ Tras verificar codigo/tag y draft con todos sus assets, actualizar el comentario
 a state published conservando sourceCommit=C/sourceTag, publicationCommit=P,
 OID remoto y referencia al draft. Conservar evidencia y el tag canonico para la
 siguiente rama candidata; NUNCA arrancarla desde P aunque el contenedor si lo haga.
+Antes de dar por terminada la entrega, subir SIN clobber el asset
+orca-release-provenance.json con schemaVersion1, repositorios, state published,
+upstreamTag/Oid, forkVersion, sourceTag/Commit, publicationCommit, sourceTree y
+artifacts[{name,size,sha256}] verificados. No autoreferenciar el JSON, copiar
+secretos o incluir rutas privadas. Verificar contenido/digest remotos. Si falta o
+contradice la procedencia, entrega parcial bloqueada: no dejar un falso terminado.
+Un workspace publicado solo sera prescindible despues de conservar evidencia
+necesaria en almacenamiento privado persistente y probar el precheck sin su registro.
+No borrar worktrees, sesiones ni ramas automaticamente.
 
 10. Instalacion SIEMPRE separada y autorizada: NO instalar releases, reiniciar
 servicios ni actualizar clientes/VPS. No checkout, pull, merge, stage, stash,

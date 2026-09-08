@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process'
-import { latestStableDesktopReleaseTag, parseDesktopStableTag } from './latest-stable-release.mjs'
+import { isAbsolute } from 'node:path'
+import { latestStableDesktopReleaseTag } from './latest-stable-release.mjs'
+import {
+  durableReleaseSource,
+  forkTag,
+  greatestTag,
+  newerSource,
+  preparation,
+  stableTag,
+  validReleaseAssets
+} from './upstream-release-provenance.mjs'
 
 const MAX_PAGES = 10
 const INCOMPLETE_RELEASE_LISTING = new Error('Incomplete release listing')
 const COMMAND_ERROR = new Error('Command failed')
-const MARKER = 'orca-release-preparation:'
-const STATES = new Set(['preparing', 'blocked', 'prepared', 'published'])
 const COMMAND_OPTIONS = {
   encoding: 'utf8',
   timeout: 10_000,
@@ -17,43 +25,16 @@ const COMMAND_OPTIONS = {
   stdio: ['ignore', 'pipe', 'pipe']
 }
 
-function stableTag(tag) {
-  if (typeof tag !== 'string') {
-    return false
-  }
-  const parsed = parseDesktopStableTag(tag)
-  return parsed && [parsed.major, parsed.minor, parsed.patch].every(Number.isSafeInteger)
-}
-
 function validOptions(options) {
   const validId = (id) => typeof id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(id)
   return (
     options &&
     validId(options.automationId) &&
     validId(options.repoId) &&
-    stableTag(options.baselineTag)
+    stableTag(options.baselineTag) &&
+    (options.orcaCli === undefined ||
+      (typeof options.orcaCli === 'string' && isAbsolute(options.orcaCli)))
   )
-}
-
-function greatestTag(tags) {
-  return latestStableDesktopReleaseTag(tags.map((tag_name) => ({ tag_name })))
-}
-
-function validOid(value) {
-  return typeof value === 'string' && /^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(value)
-}
-
-function forkTag(value) {
-  const match =
-    typeof value === 'string' && /^(v[0-9]+\.[0-9]+\.[0-9]+)-kukapu\.([1-9][0-9]*)$/.exec(value)
-  return match && stableTag(match[1]) ? match : null
-}
-
-function newerSource(left, right) {
-  if (left.upstreamTag !== right.upstreamTag) {
-    return greatestTag([left.upstreamTag, right.upstreamTag]) === left.upstreamTag
-  }
-  return BigInt(forkTag(left.sourceTag)[2]) > BigInt(forkTag(right.sourceTag)[2])
 }
 
 function isDraft(release) {
@@ -64,14 +45,18 @@ function isPrerelease(release) {
   return release.prerelease === true || release.isPrerelease === true
 }
 
-async function commandJson(command, args, run) {
+async function commandJson(command, args, run, binary = false) {
   let output
   try {
-    output = await run(command, args, COMMAND_OPTIONS)
+    output = await run(
+      command,
+      args,
+      binary ? { ...COMMAND_OPTIONS, encoding: null } : COMMAND_OPTIONS
+    )
   } catch {
     throw COMMAND_ERROR
   }
-  return JSON.parse(output)
+  return binary ? output : JSON.parse(output)
 }
 
 async function releasePages(repo, run) {
@@ -83,7 +68,9 @@ async function releasePages(repo, run) {
         'api',
         `repos/${repo}/releases?per_page=100&page=${page}`,
         '--jq',
-        'map({tag_name,draft,prerelease})'
+        repo === 'kukapu/orca'
+          ? 'map({id,tag_name,draft,prerelease,assets: [.assets[] | {id,name,state,size,digest}]})'
+          : 'map({tag_name,draft,prerelease})'
       ],
       run
     )
@@ -94,6 +81,8 @@ async function releasePages(repo, run) {
         (row) =>
           !row ||
           typeof (row.tag_name ?? row.tagName) !== 'string' ||
+          (row.id !== undefined && (!Number.isSafeInteger(row.id) || row.id <= 0)) ||
+          !validReleaseAssets(row.assets) ||
           ['draft', 'isDraft', 'prerelease', 'isPrerelease'].some(
             (flag) => row[flag] !== undefined && typeof row[flag] !== 'boolean'
           )
@@ -107,42 +96,6 @@ async function releasePages(repo, run) {
     }
   }
   throw INCOMPLETE_RELEASE_LISTING
-}
-
-function preparation(comment) {
-  if (typeof comment !== 'string' || !comment.startsWith(MARKER)) {
-    return null
-  }
-  try {
-    const value = JSON.parse(comment.split('\n', 1)[0].slice(MARKER.length))
-    if (
-      !value ||
-      !stableTag(value.upstreamTag) ||
-      !STATES.has(value.state) ||
-      (value.upstreamOid !== undefined && !validOid(value.upstreamOid)) ||
-      (value.sourceCommit !== undefined && !validOid(value.sourceCommit)) ||
-      (value.publicationCommit !== undefined && !validOid(value.publicationCommit)) ||
-      (value.sourceTag !== undefined && forkTag(value.sourceTag)?.[1] !== value.upstreamTag) ||
-      (value.forkVersion !== undefined && value.sourceTag !== `v${value.forkVersion}`) ||
-      (value.reason !== undefined && typeof value.reason !== 'string')
-    ) {
-      return null
-    }
-    if (
-      (value.state === 'prepared' || value.state === 'published') &&
-      (!validOid(value.upstreamOid) ||
-        !validOid(value.sourceCommit) ||
-        !forkTag(value.sourceTag) ||
-        typeof value.forkVersion !== 'string' ||
-        value.sourceTag !== `v${value.forkVersion}` ||
-        (value.state === 'published' && !validOid(value.publicationCommit)))
-    ) {
-      return null
-    }
-    return value
-  } catch {
-    return null
-  }
 }
 
 // No reservation: agents mark, re-read, elect earliest createdAt then id; only that owner works.
@@ -160,7 +113,7 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
     }
     const fork = await releasePages('kukapu/orca', run)
     const listing = await commandJson(
-      'orca',
+      options.orcaCli ?? 'orca',
       ['worktree', 'list', '--repo', `id:${repoId}`, '--limit', '100', '--json'],
       run
     )
@@ -181,6 +134,7 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
 
     const tags = [baselineTag]
     const sources = new Map()
+    const markers = []
     let source
     let pending = false
     for (const worktree of result.worktrees) {
@@ -191,6 +145,25 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
       if (!marker) {
         return { launch: false, reason: 'reconcile-legacy', upstreamTag }
       }
+      markers.push(marker)
+    }
+    const durable = await durableReleaseSource(fork, (id) =>
+      commandJson(
+        'gh',
+        [
+          'api',
+          `repos/kukapu/orca/releases/assets/${id}`,
+          '-H',
+          'Accept: application/octet-stream'
+        ],
+        run,
+        true
+      )
+    )
+    if (durable) {
+      markers.push(durable)
+    }
+    for (const marker of markers) {
       if (marker.state === 'preparing' || marker.state === 'blocked') {
         pending = true
       } else {
@@ -199,19 +172,25 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
           previous &&
           (previous.sourceCommit.toLowerCase() !== marker.sourceCommit.toLowerCase() ||
             previous.upstreamOid.toLowerCase() !== marker.upstreamOid.toLowerCase() ||
-            (previous.publicationCommit &&
-              marker.publicationCommit &&
-              previous.publicationCommit.toLowerCase() !== marker.publicationCommit.toLowerCase()))
+            ['publicationCommit', 'sourceTree'].some(
+              (field) =>
+                previous[field] &&
+                marker[field] &&
+                previous[field].toLowerCase() !== marker[field].toLowerCase()
+            ))
         ) {
           return { launch: false, reason: 'reconcile-legacy', upstreamTag }
         }
-        sources.set(marker.sourceTag, previous?.publicationCommit ? previous : marker)
+        sources.set(
+          marker.sourceTag,
+          previous?.publicationCommit ? { ...marker, ...previous } : { ...previous, ...marker }
+        )
         if (
           !source ||
           newerSource(marker, source) ||
           (marker.sourceTag === source.sourceTag && marker.publicationCommit)
         ) {
-          source = marker
+          source = sources.get(marker.sourceTag)
         }
         tags.push(marker.upstreamTag)
       }
@@ -235,7 +214,8 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
         if (match[1] === upstreamTag) {
           sameDraft = true
         }
-      } else if (!isPrerelease(release)) {
+      }
+      if (isDraft(release) || !isPrerelease(release)) {
         if (
           !sources.has(tag) &&
           (!source ||
@@ -257,6 +237,7 @@ export async function runUpstreamReleasePrecheck(options, run = execFileSync) {
             sourceTag: source.sourceTag,
             sourceCommit: source.sourceCommit,
             forkVersion: source.forkVersion,
+            ...(source.sourceTree ? { sourceTree: source.sourceTree } : {}),
             ...(source.publicationCommit ? { publicationCommit: source.publicationCommit } : {})
           }
         : {})
