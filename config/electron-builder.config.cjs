@@ -169,6 +169,7 @@ module.exports = {
     '!config{,/**/*}',
     '!docs{,/**/*}',
     '!mobile{,/**/*}',
+    '!cloud{,/**/*}',
     '!native{,/**/*}',
     '!skills{,/**/*}',
     // Why: guide/stub authoring sources are compiled into runtime artifacts; shipping
@@ -188,6 +189,8 @@ module.exports = {
     // Why: a custom directories.output only excludes that subdir, so previous
     // builds under dist/ would otherwise land inside app.asar.
     '!dist{,/**/*}',
+    // Private build homes and package caches are never application resources.
+    '!{.tmp,.pnpm-store}{,/**/*}',
     // Why: local e2e/report outputs are never runtime inputs; same defensive
     // exclusion as pr-evidence so a stray run at package time cannot bloat the asar.
     '!{test-results,playwright-report}{,/**/*}',
