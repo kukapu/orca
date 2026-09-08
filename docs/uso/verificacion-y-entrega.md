@@ -48,6 +48,12 @@ control de build obsoleto para obtener un verde ni construyas durante ediciones
 concurrentes de esas fuentes. Revisa permisos antes de instalar o reconstruir
 dependencias; un comando habitual puede tener efectos adicionales en ese entorno.
 
+Para tests que preparan estado mediante `window.__store`, el bundle Electron
+necesita `--mode e2e` y el bundle web independiente necesita
+`VITE_EXPOSE_STORE=true` al compilarse. Una opcion no configura el otro bundle.
+No diagnostiques un fallo de hidratacion a partir de un global que el build no
+expone. Antes de empaquetar, reconstruye ambos en modo produccion y sin ese flag.
+
 ## Nombrar bien la cobertura
 
 - Un test unitario no sustituye una prueba de aplicacion.

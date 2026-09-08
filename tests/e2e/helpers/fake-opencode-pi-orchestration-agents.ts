@@ -42,6 +42,26 @@ export const FAKE_AGENT_ASK_ARGS_SOURCE = `function buildFakeAgentAskArgs(reques
   return args
 }`
 
+/**
+ * Classify `orca orchestration ask --json` stdout. Upstream prints the shared
+ * `{ok, result}` envelope (not a bare `{answer, timedOut, messageId}` object).
+ */
+export const FAKE_AGENT_ASK_OUTCOME_SOURCE = `function classifyFakeAgentAskStdout(stdout) {
+  const parsed = JSON.parse(stdout)
+  const inner = parsed && typeof parsed === 'object' ? parsed.result : undefined
+  const payload =
+    inner && typeof inner === 'object' && !Object.prototype.hasOwnProperty.call(parsed, 'answer')
+      ? inner
+      : parsed
+  if (payload.answer !== null && payload.answer !== undefined) {
+    return 'ASK_ANSWER_RECEIVED:' + payload.answer
+  }
+  if (payload.timedOut) {
+    return 'ASK_TIMED_OUT:' + payload.threadId
+  }
+  return 'ASK_CANCELLED:' + String(payload.messageId)
+}`
+
 /** Hook events per agent kind, mirroring what the real plugins post. */
 export function fakeAgentHookEvents(kind: FakeOpencodePiAgentKind): {
   working: Record<string, string>
@@ -97,6 +117,7 @@ let capability = null
 let acknowledged = false
 ${FAKE_AGENT_PASTE_END_SCANNER_SOURCE}
 ${FAKE_AGENT_ASK_ARGS_SOURCE}
+${FAKE_AGENT_ASK_OUTCOME_SOURCE}
 function postHookEvent(eventName, extra) {
   const port = process.env.ORCA_AGENT_HOOK_PORT
   const token = process.env.ORCA_AGENT_HOOK_TOKEN
@@ -175,14 +196,7 @@ process.stdin.on('data', (chunk) => {
       const result = runOrchestrationCli(args)
       let askOutcome = 'ASK_FAILED:' + String(result.status)
       try {
-        const parsed = JSON.parse(result.stdout)
-        if (parsed.answer !== null && parsed.answer !== undefined) {
-          askOutcome = 'ASK_ANSWER_RECEIVED:' + parsed.answer
-        } else if (parsed.timedOut) {
-          askOutcome = 'ASK_TIMED_OUT:' + parsed.threadId
-        } else {
-          askOutcome = 'ASK_CANCELLED:' + String(parsed.messageId)
-        }
+        askOutcome = classifyFakeAgentAskStdout(result.stdout)
       } catch {
         askOutcome = 'ASK_FAILED:' + String(result.status)
       }

@@ -1,5 +1,17 @@
 # Ejecucion Orca de la release 1.4.197-kukapu.2
 
+## Nueva Etapa Autorizada (2026-09-07)
+
+El usuario autoriza commit local de proteccion y merge de upstream para
+reconstruir .2; no push ni instalacion desde Orca. Checkpoint creado
+`3c91f86317`. Merge de origin/main-kukapu `8693b5a28e` en curso; despues integrar
+upstream/main `314506003a`. Estado, responsables y limites actuales en
+[upstream-integration-197-2-20260907.md](./upstream-integration-197-2-20260907.md).
+Los apartados siguientes conservan la ejecucion previa y NO autorizan sus
+antiguos gates. Ultima orden: usar opencode-go/muse-spark-1.3-contributor para
+preparacion y diagnostico de tests donde el proveedor no es objeto de prueba;
+ambos workers reanudados cambiados in-place y verificados.
+
 ## Estado operativo vigente (2026-09-06, reanudado tras compactacion)
 
 Este apartado es la autoridad operativa del checkpoint. Los apartados fechados

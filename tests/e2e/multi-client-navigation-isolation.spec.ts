@@ -1,4 +1,5 @@
 import { openSidebarProjectDialog } from './helpers/sidebar-project-dialog'
+import { pinClientUiEnglish } from './helpers/pin-client-ui-english'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -85,18 +86,6 @@ async function createPairingOffer(hostPage: Page): Promise<RuntimePairingOffer> 
     }
     return { deviceId: offer.deviceId, webClientUrl: offer.webClientUrl }
   })
-}
-
-async function pinClientUiEnglish(page: Page): Promise<void> {
-  // Why uiLanguage is a per-device web-client preference (never runtime-backed),
-  // so a fresh partition resolves 'system' — the host OS locale — and every English
-  // role-name assertion below goes red on non-English machines.
-  await page.evaluate(async () => {
-    await window.__store?.getState().updateSettings({ uiLanguage: 'en' })
-  })
-  await expect
-    .poll(() => page.evaluate(() => window.__store?.getState().settings?.uiLanguage ?? null))
-    .toBe('en')
 }
 
 // Why: webClientUrl keeps the runtime pairing offer in its hash fragment (out of
