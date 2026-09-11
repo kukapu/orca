@@ -64,7 +64,12 @@ function TaskRow({ task, label }: { task: NativeChatTask; label?: string }): Rea
   )
 }
 
+function taskRowKey(task: NativeChatTask, kind?: NativeChatTaskChange['kind']): string {
+  return `${kind ?? 'task'}:${task.status}:${task.content}:${task.activeForm ?? ''}`
+}
+
 function Checklist({ list }: { list: TaskList }): React.JSX.Element {
+  const keys = new Map<string, number>()
   return list.tasks.length === 0 ? (
     <p className="text-xs text-muted-foreground">
       {translate('components.native-chat.taskList.empty', 'No tasks')}
@@ -74,9 +79,12 @@ function Checklist({ list }: { list: TaskList }): React.JSX.Element {
       aria-label={translate('components.native-chat.taskList.title', 'Tasks')}
       className="space-y-1 py-1"
     >
-      {list.tasks.map((task, index) => (
-        <TaskRow key={`${task.content}:${index}`} task={task} />
-      ))}
+      {list.tasks.map((task) => {
+        const base = taskRowKey(task)
+        const seen = keys.get(base) ?? 0
+        keys.set(base, seen + 1)
+        return <TaskRow key={`${base}:${seen}`} task={task} />
+      })}
     </ul>
   )
 }
@@ -125,6 +133,7 @@ export function NativeChatTaskList({
     )
   }
   const changes = previous ? diffNativeChatTaskLists(previous, list) : null
+  const keys = new Map<string, number>()
   return (
     <div className="space-y-1 py-1">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -147,13 +156,14 @@ export function NativeChatTaskList({
         <>
           {changes.length > 0 ? (
             <ul className="space-y-1 py-1">
-              {changes.map((change, index) => (
-                <TaskRow
-                  key={`${change.kind}:${index}`}
-                  task={change.task}
-                  label={changeLabel(change)}
-                />
-              ))}
+              {changes.map((change) => {
+                const base = taskRowKey(change.task, change.kind)
+                const seen = keys.get(base) ?? 0
+                keys.set(base, seen + 1)
+                return (
+                  <TaskRow key={`${base}:${seen}`} task={change.task} label={changeLabel(change)} />
+                )
+              })}
             </ul>
           ) : (
             <p className="text-xs text-muted-foreground">
