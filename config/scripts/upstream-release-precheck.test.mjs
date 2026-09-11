@@ -101,7 +101,7 @@ describe('runUpstreamReleasePrecheck', () => {
           'api',
           'repos/kukapu/orca/releases?per_page=100&page=1',
           '--jq',
-          'map({tag_name,draft,prerelease})'
+          'map({id,tag_name,draft,prerelease,assets: [.assets[] | {id,name,state,size,digest}]})'
         ]
       ],
       ['orca', ['worktree', 'list', '--repo', 'id:repo-1', '--limit', '100', '--json']]
@@ -163,7 +163,9 @@ describe('runUpstreamReleasePrecheck', () => {
             'api',
             `repos/${owner}/orca/releases?per_page=100&page=${index + 1}`,
             '--jq',
-            'map({tag_name,draft,prerelease})'
+            owner === 'kukapu'
+              ? 'map({id,tag_name,draft,prerelease,assets: [.assets[] | {id,name,state,size,digest}]})'
+              : 'map({tag_name,draft,prerelease})'
           ]
         ])
       )
@@ -359,7 +361,7 @@ describe('runUpstreamReleasePrecheck', () => {
     }
   )
 
-  it('ignores fork prereleases, mobile, official-format tags and unrelated drafts', async () => {
+  it('ignores fork prereleases, mobile, official-format tags and older drafts', async () => {
     const run = mockRun({
       fork: [
         [
@@ -367,7 +369,7 @@ describe('runUpstreamReleasePrecheck', () => {
           { tagName: 'v8.0.0-kukapu.1', isPrerelease: true },
           release('mobile-v9.0.0-kukapu.1'),
           release('v9.0.0'),
-          release('v9.0.0-kukapu.1', { draft: true })
+          release('v1.4.196-kukapu.1', { draft: true })
         ]
       ]
     })
@@ -540,9 +542,13 @@ describe('standalone environment entrypoint', () => {
       write: false,
       metafile: true
     })
-    expect(Object.values(result.metafile.outputs).flatMap((output) => output.imports)).toEqual([
-      expect.objectContaining({ path: 'node:child_process', external: true }),
-      expect.objectContaining({ path: 'node:url', external: true })
+    const imports = Object.values(result.metafile.outputs).flatMap((output) => output.imports)
+    expect(imports.every((entry) => entry.external)).toBe(true)
+    expect(imports.map((entry) => entry.path).sort()).toEqual([
+      'node:child_process',
+      'node:crypto',
+      'node:path',
+      'node:url'
     ])
     expect(result.outputFiles[0].text).toContain('ORCA_RELEASE_PRECHECK_OPTIONS')
   })
