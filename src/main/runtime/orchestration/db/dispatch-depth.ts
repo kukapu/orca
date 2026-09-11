@@ -29,13 +29,15 @@ export type DispatchCreator =
       processIncarnation?: string
     }
 
+/** Creator identity to persist on a new row, so depth can later tell delegation from bookkeeping. */
 export function recordedCreatorIdentity(creator: DispatchCreator): {
   creatorHandle: string | null
   creatorPaneKey: string | null
 } {
-  return creator.kind === 'system'
-    ? { creatorHandle: null, creatorPaneKey: null }
-    : { creatorHandle: creator.handle, creatorPaneKey: creator.paneKey ?? null }
+  if (creator.kind === 'system') {
+    return { creatorHandle: null, creatorPaneKey: null }
+  }
+  return { creatorHandle: creator.handle, creatorPaneKey: creator.paneKey ?? null }
 }
 
 // Self-recorded context is not delegation; pre-v37 unknown creators still count.
@@ -48,6 +50,14 @@ function isSelfCreatedDispatch(
   return row.creator_handle != null && row.creator_handle === row.assignee_handle
 }
 
+/**
+ * Attachment states in which the worker may still be running.
+ *
+ * `start_unknown` means prompt delivery may have succeeded; `stopping` and
+ * `stop_unknown` do not establish that the process exited. Loss of contact is
+ * never evidence of process death — see docs/reference/ssh-execution-boundary.md.
+ * An `unverifiable` worker must still count as a nesting parent.
+ */
 export class AmbiguousDispatchParentError extends Error {
   constructor(message: string) {
     super(message)
@@ -87,7 +97,10 @@ export function resolveCreatorDepth(this: OrchestrationDb, creator: DispatchCrea
   return depths.length > 0 ? Math.max(...depths) : ROOT_DISPATCH_DEPTH
 }
 
-// Only one current role proves a creator; never infer lineage from task history.
+/**
+ * Proven creator Attempt identity; null when system-owned, absent, or ambiguous.
+ * Throws when multiple live remote attachments match the same terminal identity.
+ */
 export function resolveCreatorDispatchId(
   this: OrchestrationDb,
   creator: DispatchCreator

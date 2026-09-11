@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import Database from '../../../../sqlite/sync-database'
 import { OrchestrationDb } from '../orchestration-db'
 import { createPersistedSchemaFixture } from './persisted-schema-test-fixture'
-import { readArchivedWorkerOutput } from '../../../rpc/methods/orchestration-worker-archive-read'
+import { readArchivedWorkerOutput } from '../../../rpc/methods/orchestration/worker/worker-archive-read'
 
 describe('real constructor admission of published schema39', () => {
   let directory: string

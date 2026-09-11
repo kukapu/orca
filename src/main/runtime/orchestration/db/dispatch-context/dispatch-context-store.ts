@@ -7,6 +7,7 @@ import { paneKeyMatchSuffix } from '../pane-key-match'
 import { prepareDispatchContextClaim } from '../dispatch-row-writer'
 import { recordedCreatorIdentity, type DispatchCreator } from '../dispatch-depth'
 import type { OrchestrationDb } from '../orchestration-db'
+import { transitionLifecycleWithDb } from '../lifecycle-transition'
 import { taskNotFoundError, taskNotStartableError } from '../../task-dispatch-refusal'
 
 export function createDispatchContext(
@@ -87,7 +88,12 @@ export function createDispatchContext(
         ? taskNotStartableError(this, message, current)
         : taskNotFoundError(message, { taskId })
     }
-    this.db.prepare("UPDATE tasks SET status = 'dispatched' WHERE id = ?").run(taskId)
+    transitionLifecycleWithDb(this.db, {
+      entity: 'task',
+      id: taskId,
+      from: 'ready',
+      to: 'dispatched'
+    })
     const dispatch = this.db
       .prepare('SELECT * FROM dispatch_contexts WHERE id = ?')
       .get(id) as DispatchContextRow

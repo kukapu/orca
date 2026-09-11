@@ -8,7 +8,7 @@ import {
   createPersistedSchemaFixture,
   openPersistedSchemaMethodsFixture
 } from '../../orchestration/db/schema/persisted-schema-test-fixture'
-import { ORCHESTRATION_FEDERATION_ATTACH_METHODS } from './orchestration-federation'
+import { ORCHESTRATION_FEDERATION_ATTACH_METHODS } from './orchestration/federation/federation'
 
 describe('federation caller native resource identity bridge, no admission39', () => {
   let directory: string

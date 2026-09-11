@@ -3,7 +3,7 @@ import type { RpcContext } from '../core'
 import { AGENT_PROMPT_STALLED_ERROR } from '../../agent-prompt-submission-verification'
 import type { OrchestrationDb } from '../../orchestration/db'
 import type { OrcaRuntimeService } from '../../orca-runtime'
-import { createOrchestrationRpcHarness } from './orchestration-rpc-test-harness'
+import { createOrchestrationRpcHarness } from './orchestration/rpc-test-harness'
 
 const WORKER = 'term_worker'
 const PANE = 'tab_worker:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'

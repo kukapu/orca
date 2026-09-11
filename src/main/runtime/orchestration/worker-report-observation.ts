@@ -7,7 +7,6 @@ export type WorkerReportObservation = {
   homeReceivedAt: number
 }
 
-// Persisted contract: da3def1b0f worker-report-observation.ts.
 export function workerReportObservation(msg: MessageRow): WorkerReportObservation | undefined {
   if (msg.type !== 'worker_done' || hasLifecycleRejectionMarker(msg.payload)) {
     return undefined

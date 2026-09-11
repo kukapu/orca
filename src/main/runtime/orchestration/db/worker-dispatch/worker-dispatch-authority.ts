@@ -20,9 +20,9 @@ export function prepareStartingWorkerAuthority(
     effects: unknown[]
     setupState: string
     hostScope?: string | null
-    // 'created': this worker-start operation created the agent terminal (including agent-first
-    // worktree creation, whose effects receipt says 'reused_agent_terminal'). 'external': an
-    // explicit --terminal reuse; ownership transfers only from an exact owned settled resource.
+    // 'created': this worker-start operation created the agent terminal (agent-first worktree
+    // creation included; its pre-rename effects rows said 'reused_agent_terminal'). 'external':
+    // an explicit --terminal reuse; ownership transfers only from an exact owned settled resource.
     terminalOwnership?: 'created' | 'external'
   }
 ): string {
@@ -178,12 +178,64 @@ export function prepareStartingWorkerAuthority(
   }
 }
 
+/**
+ * Custody for an agent terminal this worker-start just created, recorded at creation instead of
+ * after the agent boot wait. Until the row exists a keystroke into the booting pane finds no
+ * ownership to flip, so the takeover is silently dropped and a later `worker-release` closes the
+ * pane under the user.
+ *
+ * Ownership of a pane only; the Dispatch capability stays behind the boot wait, because authority
+ * must not be handed to a process that has not come up.
+ */
+export function recordCreatedWorkerTerminalCustody(
+  this: OrchestrationDb,
+  params: {
+    dispatchId: string
+    handle: string
+    paneKey: string
+    processIncarnation: string
+    worktreeId: string
+    hostScope?: string | null
+  }
+): void {
+  const transaction = beginDispatchAuthorityTransaction(this.db)
+  try {
+    const dispatch = this.getDispatchContextById(params.dispatchId)
+    const worker = this.getWorkerDispatch(params.dispatchId)
+    if (!dispatch || dispatch.status !== 'pending' || worker?.state !== 'starting') {
+      throw new OrchestrationError(
+        'dispatch_inactive',
+        `Dispatch ${params.dispatchId} is not starting.`
+      )
+    }
+    if (!this.getWorkerTerminalResourceByOwner(params.dispatchId)) {
+      this.createWorkerTerminalResourceStatement({
+        dispatchId: params.dispatchId,
+        worktreeId: params.worktreeId,
+        terminalHandle: params.handle,
+        paneKey: params.paneKey,
+        processIncarnation: params.processIncarnation,
+        endpointId: worker.runtime_epoch,
+        endpointIncarnation: params.processIncarnation,
+        hostScope: params.hostScope,
+        ownership: 'owned'
+      })
+    }
+    transaction.commit()
+  } catch (error) {
+    transaction.rollback()
+    throw error
+  }
+}
+
 export type WorkerDispatchAuthorityMethods = {
   prepareStartingWorkerAuthority: typeof prepareStartingWorkerAuthority
+  recordCreatedWorkerTerminalCustody: typeof recordCreatedWorkerTerminalCustody
 }
 
 export function attachWorkerDispatchAuthority(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
-    prepareStartingWorkerAuthority
+    prepareStartingWorkerAuthority,
+    recordCreatedWorkerTerminalCustody
   })
 }

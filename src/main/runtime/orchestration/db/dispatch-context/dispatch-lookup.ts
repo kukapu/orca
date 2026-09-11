@@ -6,14 +6,22 @@ import {
   paneKeyMatchSuffix
 } from '../pane-key-match'
 import type { OrchestrationDb } from '../orchestration-db'
-import { DISPATCH_CONTEXT_COLUMN_LIST } from '../row-column-lists'
+import { DISPATCH_CONTEXT_COLUMNS, selectColumns } from '../row-column-lists'
 import {
   isRecoverableUnobservedPromptDispatch,
   isUnobservedPromptFailure
 } from '../worker-dispatch/worker-dispatch-stop'
 
 const ACTIVE_ASSIGNEE_STATUS_SQL = `status IN ('pending', 'dispatched')`
-const LATEST_DISPATCH_BY_HANDLE_SQL = `SELECT ${DISPATCH_CONTEXT_COLUMN_LIST} FROM dispatch_contexts WHERE assignee_handle = ? ORDER BY rowid DESC LIMIT 1`
+
+function dispatchContextProjection(db: OrchestrationDb): string {
+  const present = new Set(
+    (db.db.pragma('table_info(dispatch_contexts)') as { name: string }[]).map(
+      (column) => column.name
+    )
+  )
+  return selectColumns(DISPATCH_CONTEXT_COLUMNS.filter((column) => present.has(column)))
+}
 
 function lookupDispatchByPaneSuffix(
   db: OrchestrationDb,
@@ -22,7 +30,7 @@ function lookupDispatchByPaneSuffix(
 ): DispatchContextRow | undefined {
   return db.db
     .prepare(
-      `SELECT ${DISPATCH_CONTEXT_COLUMN_LIST} FROM dispatch_contexts
+      `SELECT ${dispatchContextProjection(db)} FROM dispatch_contexts
        WHERE assignee_pane_key IS NOT NULL ${statusFilter}
          AND instr(assignee_pane_key, ':') > 1
          AND ${DISPATCH_PANE_KEY_MATCH_SUFFIX_SQL} = ?
@@ -42,7 +50,7 @@ function lookupDispatchByPane(
   }
   const exactPane = db.db
     .prepare(
-      `SELECT ${DISPATCH_CONTEXT_COLUMN_LIST} FROM dispatch_contexts
+      `SELECT ${dispatchContextProjection(db)} FROM dispatch_contexts
        WHERE assignee_pane_key = ? ${statusFilter}
        ORDER BY rowid DESC LIMIT 1`
     )
@@ -62,7 +70,7 @@ function lookupDispatchForAssignee(
   const statusFilter = statusSql ? `AND (${statusSql})` : ''
   const byHandle = db.db
     .prepare(
-      `SELECT ${DISPATCH_CONTEXT_COLUMN_LIST} FROM dispatch_contexts
+      `SELECT ${dispatchContextProjection(db)} FROM dispatch_contexts
        WHERE assignee_handle = ? ${statusFilter}
        ORDER BY rowid DESC LIMIT 1`
     )
@@ -226,9 +234,11 @@ export function getLatestDispatchForTerminal(
   this: OrchestrationDb,
   handle: string
 ): DispatchContextRow | undefined {
-  return this.db.prepare(LATEST_DISPATCH_BY_HANDLE_SQL).get(handle) as
-    | DispatchContextRow
-    | undefined
+  return this.db
+    .prepare(
+      `SELECT ${dispatchContextProjection(this)} FROM dispatch_contexts WHERE assignee_handle = ? ORDER BY rowid DESC LIMIT 1`
+    )
+    .get(handle) as DispatchContextRow | undefined
 }
 
 export type DispatchLookupMethods = {

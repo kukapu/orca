@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { OrchestrationDb } from '../../orchestration/db'
 import { createPersistedSchemaFixture } from '../../orchestration/db/schema/persisted-schema-test-fixture'
 import type { WorkerTerminalResourceRow } from '../../orchestration/worker-terminal-ownership'
-import { readArchivedWorkerOutput } from './orchestration-worker-archive-read'
+import { readArchivedWorkerOutput } from './orchestration/worker/worker-archive-read'
 
 const journal = {
   version: 1,

@@ -54,10 +54,6 @@ function startingDispatchContextSql(identityColumns: string[]): string {
  ) VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now')${', ?'.repeat(identityColumns.length)})`
 }
 
-const REMOTE_DISPATCH_ATTACHMENT_SQL = `INSERT INTO remote_dispatch_attachments (
-   dispatch_id, task_id, home_peer_fingerprint, protocol_version, runtime_epoch, depth
- ) VALUES (?, ?, ?, ?, ?, ?)`
-
 /** Last line of defence: a row that reached here unstamped would read as a root. */
 function assertStampedDepth(depth: number): void {
   if (!Number.isInteger(depth) || depth < 1) {
@@ -65,6 +61,12 @@ function assertStampedDepth(depth: number): void {
       `Refusing to write a live-worker row with depth ${depth}; expected an integer >= 1.`
     )
   }
+}
+
+function tableHasColumn(db: Database.Database, table: string, column: string): boolean {
+  return (db.pragma(`table_info(${table})`) as { name: string }[]).some(
+    (row) => row.name === column
+  )
 }
 
 /** Prepare before the claim savepoint: schema reads must not pin its read snapshot. */
@@ -152,6 +154,7 @@ export function insertRemoteDispatchAttachmentRow(
   db: Database.Database,
   params: {
     dispatchId: string
+    runId?: string
     taskId: string
     homePeerFingerprint: string
     protocolVersion: number
@@ -161,7 +164,28 @@ export function insertRemoteDispatchAttachmentRow(
   }
 ): void {
   assertStampedDepth(params.depth)
-  db.prepare(REMOTE_DISPATCH_ATTACHMENT_SQL).run(
+  const includeHomeRunId = tableHasColumn(db, 'remote_dispatch_attachments', 'home_run_id')
+  if (includeHomeRunId) {
+    db.prepare(
+      `INSERT INTO remote_dispatch_attachments (
+         dispatch_id, home_run_id, task_id, home_peer_fingerprint, protocol_version, runtime_epoch, depth
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      params.dispatchId,
+      params.runId ?? '',
+      params.taskId,
+      params.homePeerFingerprint,
+      params.protocolVersion,
+      params.runtimeEpoch,
+      params.depth
+    )
+    return
+  }
+  db.prepare(
+    `INSERT INTO remote_dispatch_attachments (
+       dispatch_id, task_id, home_peer_fingerprint, protocol_version, runtime_epoch, depth
+     ) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
     params.dispatchId,
     params.taskId,
     params.homePeerFingerprint,

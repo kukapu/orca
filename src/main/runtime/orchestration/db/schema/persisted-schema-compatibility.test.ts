@@ -65,14 +65,14 @@ describe('persisted orchestration schema admission', () => {
     vi.restoreAllMocks()
   }
 
-  it('admits a physical stable30 fixture and keeps durable Run ACK/replay and version30', () => {
+  it('admits a physical stable30 fixture, migrates to official40, and keeps durable Run ACK/replay', () => {
     const path = fixture(30)
     let db = new OrchestrationDb(path)
     let deliveryId: string
     try {
-      expect(db.db.pragma('user_version', { simple: true })).toBe(30)
-      expect(db.hasColumn('deliveries', 'mailbox_handle')).toBe(false)
-      expect(db.hasColumn('messages', 'pointer_enter_pending')).toBe(false)
+      expect(db.db.pragma('user_version', { simple: true })).toBe(40)
+      expect(db.hasColumn('deliveries', 'mailbox_handle')).toBe(true)
+      expect(db.hasColumn('messages', 'pointer_enter_pending')).toBe(true)
       const batch = db.getOrCreateRunDelivery({ runId: 'r1', consumerGeneration: 7 })!
       expect(batch.messages.map((message) => message.id)).toEqual(['run-mail'])
       deliveryId = batch.delivery.id
@@ -93,7 +93,7 @@ describe('persisted orchestration schema admission', () => {
         payload: 'opaque',
         extra: 'keep'
       })
-      expect(db.db.pragma('user_version', { simple: true })).toBe(30)
+      expect(db.db.pragma('user_version', { simple: true })).toBe(40)
     } finally {
       db.close()
     }

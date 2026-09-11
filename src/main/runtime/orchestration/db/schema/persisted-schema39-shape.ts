@@ -1,6 +1,5 @@
 import Database from '../../../../sqlite/sync-database'
-import { createCoreTablesSql } from './create-core-tables-sql'
-import { createGraphTablesSql } from './create-graph-tables-sql'
+import { createSchema30TablesSql } from './schema30-reference-tables'
 import {
   SCHEMA39_REFERENCE_ADDITIONS,
   SCHEMA39_ROUTING_TRIGGER
@@ -125,8 +124,7 @@ export function getSchema39ReferenceShape(): ReferenceShape {
   const reference = new Database(':memory:')
   try {
     reference.exec(
-      createCoreTablesSql() +
-        createGraphTablesSql() +
+      createSchema30TablesSql() +
         SCHEMA39_REFERENCE_LEGACY +
         SCHEMA39_REFERENCE_ADDITIONS +
         SCHEMA39_ROUTING_TRIGGER

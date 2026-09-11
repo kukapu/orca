@@ -92,6 +92,8 @@ export function resetTasks(this: OrchestrationDb): void {
 
 export function resetMessages(this: OrchestrationDb): void {
   // Why: federation_relay_items is deliberately kept — relay rows carry contiguous cross-server cursors, not just inbox history.
+  // Why structured_pointer_operations goes: the row is one nudge's idempotency key over a batch of
+  // messages this deletes, so keeping it would suppress the re-mint for a batch that no longer exists.
   this.runResetTransaction(
     `
     DELETE FROM legacy_mail_receipts;

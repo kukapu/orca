@@ -2,10 +2,17 @@ import type { MessageType, MessageRow } from '../../types'
 import { exposeMessageTimestamps, exposeMessageListTimestamps } from '../utc-timestamp'
 import { addLifecycleRejectionMarker } from '../lifecycle-rejection-marker'
 import type { OrchestrationDb } from '../orchestration-db'
+import { getPersistedSchemaCapabilities } from '../schema/persisted-schema-capabilities'
 import { unreservedMailboxPushSql } from './mailbox-push-reservation'
 
 const MESSAGE_ID_UPDATE_BATCH_SIZE = 500
 const MESSAGE_MUTATION_SAVEPOINT = 'message_id_mutation'
+
+function pointerClearSql(db: OrchestrationDb): string {
+  return getPersistedSchemaCapabilities(db.db).pointerReservations
+    ? ', pointer_enter_pending = 0, pointer_pty_id = NULL, pointer_process_incarnation = NULL'
+    : ''
+}
 
 function runBatchedMessageMutation(
   db: OrchestrationDb,
@@ -154,10 +161,11 @@ export function getMessageById(this: OrchestrationDb, id: string): MessageRow | 
 }
 
 export function markAsRead(this: OrchestrationDb, ids: string[]): void {
+  const pointerClear = pointerClearSql(this)
   runBatchedMessageMutation(
     this,
     ids,
-    (placeholders) => `UPDATE messages SET read = 1 WHERE id IN (${placeholders})`
+    (placeholders) => `UPDATE messages SET read = 1${pointerClear} WHERE id IN (${placeholders})`
   )
 }
 
@@ -202,11 +210,12 @@ export function areUnreadMessages(this: OrchestrationDb, toHandle: string, ids: 
 
 // Why: superseded lifecycle messages stay in history but must not be consumed or injected after their dispatch finished.
 export function markAsReadAndDelivered(this: OrchestrationDb, ids: string[]): void {
+  const pointerClear = pointerClearSql(this)
   runBatchedMessageMutation(
     this,
     ids,
     (placeholders) =>
-      `UPDATE messages SET read = 1, delivered_at = COALESCE(delivered_at, datetime('now')) WHERE id IN (${placeholders})`
+      `UPDATE messages SET read = 1, delivered_at = COALESCE(delivered_at, datetime('now'))${pointerClear} WHERE id IN (${placeholders})`
   )
 }
 

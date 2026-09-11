@@ -1,5 +1,6 @@
 import { MESSAGE_TYPES, type MessagePriority, type MessageType } from './types'
 import type { OrchestrationDb } from './db'
+import { resolveFederatedHomeRunId } from './db/contract-constants'
 import { OrchestrationError } from './orchestration-error'
 
 const MESSAGE_TYPE_SET = new Set<MessageType>(MESSAGE_TYPES)
@@ -58,11 +59,21 @@ export function importFederatedControlMessage(
     payload: string
   }
 ): { imported: boolean; type: MessageType } {
+  const attachment = db.getRemoteDispatchAttachment(params.dispatchId)
+  if (!attachment) {
+    throw new OrchestrationError(
+      'dispatch_not_found',
+      `Remote Dispatch ${params.dispatchId} was not found.`
+    )
+  }
+  const homeRunId = resolveFederatedHomeRunId(attachment, db)
+  db.requireRun(homeRunId)
   const message = parseFederatedControlMessage(params.payload)
   const recipient = `dispatch:${params.dispatchId}`
   const existing = db.getMessageById(params.messageId)
   if (existing) {
     if (
+      existing.run_id !== homeRunId ||
       existing.to_handle !== recipient ||
       existing.from_handle !== message.from ||
       existing.subject !== message.subject ||
@@ -81,6 +92,7 @@ export function importFederatedControlMessage(
   }
   db.insertMessage({
     id: params.messageId,
+    runId: homeRunId,
     from: message.from,
     to: recipient,
     subject: message.subject,

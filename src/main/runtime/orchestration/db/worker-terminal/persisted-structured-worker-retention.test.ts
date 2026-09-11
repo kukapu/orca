@@ -8,9 +8,9 @@ import {
   openPersistedSchemaMethodsFixture
 } from '../schema/persisted-schema-test-fixture'
 import { planLegacyWorkerTerminalRecovery } from '../../orchestration-legacy-worker-terminal-recovery'
-import { completeWorkerTerminalRelease } from '../../../rpc/methods/orchestration-worker-release-completion'
+import { completeWorkerTerminalRelease } from '../../../rpc/methods/orchestration/worker/worker-release-completion'
 import type { OrcaRuntimeService } from '../../../orca-runtime'
-import { ORCHESTRATION_WORKER_STOP_METHODS } from '../../../rpc/methods/orchestration-worker-stop'
+import { ORCHESTRATION_WORKER_STOP_METHODS } from '../../../rpc/methods/orchestration/worker/worker-stop'
 
 const paneKey = 'tab-worker:11111111-1111-4111-8111-111111111111'
 const ptyIncarnation = 'pty-worker:22222222-2222-4222-8222-222222222222'

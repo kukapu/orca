@@ -14,6 +14,13 @@ export function mintDispatchCapability(
     processIncarnation: string
   }
 ): string {
+  const dispatch = this.getDispatchContextById(params.dispatchId)
+  if (!dispatch || (dispatch.status !== 'pending' && dispatch.status !== 'dispatched')) {
+    throw new OrchestrationError(
+      'dispatch_inactive',
+      `Dispatch ${params.dispatchId} is not active.`
+    )
+  }
   const capability = `dcap_${randomBytes(32).toString('base64url')}`
   // Rebinding authority and fencing the previous consumer must commit together.
   const transaction = beginDispatchAuthorityTransaction(this.db)

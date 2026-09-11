@@ -1,4 +1,6 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { sessionIdFromStructuredWorkerIncarnation } from './structured-worker-identity'
+import { observeStructuredWorker } from './rpc/methods/orchestration-structured-worker-lifecycle'
 import { OrcaRuntimeWithApplyMobileDisplayMode } from './orca-runtime-apply-mobile-display-mode'
 import { addListenerToMap } from './orca-runtime-core'
 import { notifyRuntimeListeners, withTimeoutResult } from './runtime-async-boundaries'
@@ -22,7 +24,6 @@ import {
 } from './orchestration/worker-terminal-process-liveness'
 import { getRepoIdFromWorktreeId } from '../../shared/worktree/id'
 import { buildOrchestrationTaskDisplayMetadata } from '../../shared/orchestration-task-display'
-import { isPersistedStructuredWorkerIdentity } from './orchestration/persisted-structured-worker-identity'
 
 export class OrcaRuntimeWithSubscribeToTerminalResize extends OrcaRuntimeWithApplyMobileDisplayMode {
   subscribeToTerminalResize(
@@ -70,6 +71,15 @@ export class OrcaRuntimeWithSubscribeToTerminalResize extends OrcaRuntimeWithApp
       paneKey ?? undefined
     )
     if (!dispatch) {
+      return
+    }
+    // A process that dies while we are stopping it is that stop succeeding, not a failure:
+    // settling it as `failed` here made the in-flight worker-stop report its own success as an error.
+    // Only a stop begun in THIS runtime can claim the exit; a `stopping` row left durable by a
+    // killed process would otherwise absorb a much later crash as a clean stop.
+    const stopping = this._orchestrationDb.getWorkerDispatch?.(dispatch.id)
+    if (stopping?.state === 'stopping' && stopping.runtime_epoch === this.getRuntimeId()) {
+      this._orchestrationDb.settleWorkerStop(dispatch.id)
       return
     }
 
@@ -123,7 +133,7 @@ export class OrcaRuntimeWithSubscribeToTerminalResize extends OrcaRuntimeWithApp
           exitCause: cause,
           handle
         }),
-        ...(recipient.runId ? { runId: recipient.runId } : {})
+        runId: dispatch.run_id
       })
       this.notifyMessageArrived(escalation.to_handle, escalation.type)
     } catch (error) {
@@ -151,8 +161,15 @@ export class OrcaRuntimeWithSubscribeToTerminalResize extends OrcaRuntimeWithApp
     processIncarnation: string,
     serializedHostScope: string | null
   ): Promise<'live' | 'exited' | 'unverifiable'> {
-    if (isPersistedStructuredWorkerIdentity(processIncarnation)) {
-      return 'unverifiable'
+    const structuredSessionId = sessionIdFromStructuredWorkerIncarnation(processIncarnation)
+    if (structuredSessionId) {
+      // A structured session has no PTY, so the process table can only ever fail to find it —
+      // answering `exited` from that absence would release a running provider child. The durable
+      // agent-session record is asked directly rather than through the in-memory identity
+      // registry: settlement forgets the registry entry, so gating on one made a stopped worker's
+      // resource answer `unverifiable` forever and stay in `worker-list --terminalState retained`
+      // for the life of the DB.
+      return observeStructuredWorker({ sessionId: structuredSessionId }).status
     }
     const hostScope = parseWorkerTerminalHostScope(serializedHostScope)
     if (!hostScope || !this.ptyController?.listProcesses) {

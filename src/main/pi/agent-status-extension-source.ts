@@ -48,14 +48,14 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
           '  return ompRuntime ? runtimeOmpSessionMetadata : sessionMetadata',
           '}',
           '',
-          'function getPersistedSessionMetadata(metadata: Record<string, unknown>): Record<string, unknown> {',
-          '  const sessionFile = metadata.session_file',
+          'function getPersistedSessionMetadata(): Record<string, unknown> {',
+          '  const sessionFile = sessionMetadata.session_file',
           "  if (typeof sessionFile !== 'string' || !sessionFile) return {}",
           '  try {',
           "    const fs = require('fs')",
           '    // Why: Pi publishes its planned path before creating the transcript;',
           '    // recheck on every post so the first completed turn becomes resumable.',
-          '    return fs.existsSync(sessionFile) ? metadata : {}',
+          '    return fs.existsSync(sessionFile) ? sessionMetadata : {}',
           '  } catch {',
           '    return {}',
           '  }',
@@ -84,7 +84,7 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
   // Why: Pi resumes from an existing transcript; OMP resumes directly by session id (#8962).
   const payloadLine =
     kind !== 'omp'
-      ? '    payload: { hook_event_name: hookEventName, ...(ompRuntime ? metadata : getPersistedSessionMetadata(metadata)), ...extra },'
+      ? '    payload: { hook_event_name: hookEventName, ...(ompRuntime ? metadata : getPersistedSessionMetadata()), ...extra },'
       : '    payload: { hook_event_name: hookEventName, ...metadata, ...extra },'
 
   // Why: keep this string self-contained — it runs inside the pi process,
@@ -99,6 +99,7 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     'let warnedBadEndpoint = false',
     '// Why: Pi awaits handlers; bounded status delivery stays off that critical path.',
     'const HOOK_POST_TIMEOUT_MS = 1000',
+    ...(kind === 'pi' ? ['let piUiPromptDepth = 0', 'let piTurnInFlight = false'] : []),
     ...sessionMetadataSourceLines,
     '',
     '// Why: re-reading the endpoint file on every event is cheap (small file,',
@@ -157,7 +158,11 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
     '',
     ...getPiAgentStatusRuntimeDetectionSourceLines(kind),
     '',
-    ...getPiAgentStatusPostQueueSourceLines(),
+    ...getPiAgentStatusPostQueueSourceLines().map((line) =>
+      kind === 'pi' && line.includes('const extraWithOptions =')
+        ? '  const extraWithOptions = { ...observedOptionsPayload(), ...extra, ...(!isOmpRuntime() && piUiPromptDepth > 0 ? { ui_prompt_active: true } : {}) }'
+        : line
+    ),
     'async function postOnce(',
     '  hookEventName: string,',
     '  extra: Record<string, unknown>,',

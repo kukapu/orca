@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OrchestrationDb } from '../../orchestration/db'
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import { LEGACY_RUN_ID } from '../../orchestration/db/contract-constants'
-import { checkWorkerMailbox } from './orchestration-check-worker'
+import { checkWorkerMailbox } from './orchestration/messaging/check-worker'
 import {
   createPersistedSchemaFixture,
   openPersistedSchemaMethodsFixture
@@ -141,6 +141,8 @@ describe('worker check with physical schema30/39 methods, admission39 still bloc
          state, terminal_handle, pane_key, process_incarnation, capability_hash)
         VALUES ('d1', 'remote-task', 'remote-peer', 'epoch', 11, 'ready', 'remote-worker',
                 'remote-pane', 'remote-process', 'fixture-capability-hash');
+      INSERT OR IGNORE INTO runs (id, objective, consumer_generation, legacy)
+        VALUES ('${LEGACY_RUN_ID}', 'Legacy', 0, 1);
       INSERT INTO messages (id, run_id, from_handle, to_handle, subject)
         VALUES ('remote-mail', '${LEGACY_RUN_ID}', 'sender', 'dispatch:d1', 'Remote message');
     `)

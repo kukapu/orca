@@ -10,6 +10,7 @@ import type {
 } from './runtime-terminal-contracts'
 import type { TerminalSideEffectBatch } from '../../shared/terminal-side-effect-facts'
 import type { AgentStatusIpcPayload } from '../../shared/agent-status-types'
+import type { ObservedAgentStatusPaneIdentity } from '../ipc/agent-status-ipc-boundary'
 import type { AgentHookAuthorityAttestation } from '../agent-hooks/server'
 import type { WorkerObservedOptionsCandidateRow } from './orchestration/worker-observed-options'
 import type { RuntimeDesktopWindowStatus } from '../../shared/runtime-types'
@@ -65,6 +66,10 @@ export class OrcaRuntimeWithPreservedBranchCleanup extends OrcaRuntimeWithTermin
   protected terminalSideEffectConsumerAvailable = false
 
   protected readonly getAgentStatusSnapshotFn: (() => AgentStatusIpcPayload[]) | null
+
+  protected readonly readObservedAgentStatusPaneIdentityFn: (
+    paneKey: string
+  ) => ObservedAgentStatusPaneIdentity
 
   protected readonly getAgentProviderSessionSnapshotFn: (() => AgentStatusIpcPayload[]) | null
 

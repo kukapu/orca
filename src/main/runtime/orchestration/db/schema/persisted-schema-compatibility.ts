@@ -3,7 +3,7 @@ import Database from '../../../../sqlite/sync-database'
 import { assertPersistedSchema39Shape } from './persisted-schema39-shape'
 import { assertNoActiveStructuredWorkers } from './persisted-schema39-active-structured'
 
-export type PersistedSchemaProfile = 'stable30' | 'fork39'
+export type PersistedSchemaProfile = 'stable30' | 'fork39' | 'stable40'
 
 const FORK_COLUMNS = [
   ['messages', ['pointer_enter_pending', 'pointer_pty_id', 'pointer_process_incarnation']],
@@ -63,10 +63,20 @@ export function assertPersistedSchemaCompatibility(db: Database.Database): Persi
     assertNoActiveStructuredWorkers(db)
     return 'fork39'
   }
+  if (version === 40) {
+    const homeRun = db.pragma('table_info(remote_dispatch_attachments)') as { name: string }[]
+    if (!homeRun.some((column) => column.name === 'home_run_id')) {
+      throw new UnsupportedPersistedSchemaError(
+        version,
+        'schema40 requires remote_dispatch_attachments.home_run_id'
+      )
+    }
+    return 'stable40'
+  }
   if (!Number.isInteger(version) || version < 0 || version > 30) {
     throw new UnsupportedPersistedSchemaError(
       version,
-      'only legacy/stable30 and validated fork39 profiles are admitted'
+      'only legacy/stable30, validated fork39, and official schema40 profiles are admitted'
     )
   }
 

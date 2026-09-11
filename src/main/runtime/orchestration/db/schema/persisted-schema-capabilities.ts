@@ -5,7 +5,7 @@ import {
 } from './persisted-schema-compatibility'
 
 export type PersistedSchemaCapabilities = Readonly<{
-  profile: 'stable30' | 'fork39'
+  profile: 'stable30' | 'fork39' | 'stable40'
   mailboxScopedDeliveries: boolean
   pointerReservations: boolean
   dispatchConsumerGeneration: boolean
@@ -32,12 +32,14 @@ export function getPersistedSchemaCapabilities(db: Database.Database): Persisted
     assertForkMailboxShape(db)
   }
   const fork = version === 39
+  const official40 = version === 40
+  const mailbox = fork || official40
   const capabilities: PersistedSchemaCapabilities = Object.freeze({
-    profile: fork ? 'fork39' : 'stable30',
-    mailboxScopedDeliveries: fork,
-    pointerReservations: fork,
-    dispatchConsumerGeneration: fork,
-    remoteConsumerGeneration: fork
+    profile: fork ? 'fork39' : official40 ? 'stable40' : 'stable30',
+    mailboxScopedDeliveries: mailbox,
+    pointerReservations: mailbox,
+    dispatchConsumerGeneration: mailbox,
+    remoteConsumerGeneration: mailbox
   })
   connectionCapabilities.set(db, { version, schemaCookie, capabilities })
   return capabilities

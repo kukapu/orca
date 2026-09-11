@@ -1,7 +1,9 @@
+import { sessionIdFromStructuredWorkerIncarnation } from '../structured-worker-identity'
 import { isPtyIncarnationId, type PtyIncarnationId } from '../../../shared/pty-incarnation'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
 import type { LegacyWorkerTerminalRecoveryRow } from './types'
 import { isPersistedStructuredWorkerIdentity } from './persisted-structured-worker-identity'
+import { WORKER_SETTLED_STATES } from './worker-terminal-ownership'
 
 export type LegacyWorkerTerminalRecoveryCandidate = {
   dispatchId: string
@@ -33,6 +35,11 @@ function parseProcessIncarnation(
   }
   const ptyId = value.slice(0, separator)
   const incarnationId = value.slice(separator + 1)
+  // A structured worker's incarnation names a session lineage, not a PTY; adopting it as one
+  // would hand a live chat session's dispatch to the PTY recovery path.
+  if (sessionIdFromStructuredWorkerIncarnation(value)) {
+    return null
+  }
   return ptyId && isPtyIncarnationId(incarnationId) ? { ptyId, incarnationId } : null
 }
 
@@ -66,6 +73,9 @@ export function planLegacyWorkerTerminalRecovery(
         paneKey,
         contractVersion: row.contract_version
       })
+    }
+    if (WORKER_SETTLED_STATES.includes(row.worker_state)) {
+      continue
     }
     const terminalHandle = row.assignee_handle?.trim()
     const workerHandle = row.agent_terminal_handle?.trim()

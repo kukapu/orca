@@ -6,9 +6,9 @@ import { OrchestrationDb } from '../../orchestration/db'
 import { createPersistedSchemaFixture } from '../../orchestration/db/schema/persisted-schema-test-fixture'
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import type { OrchestrationWorkerReadResult } from '../../../../shared/orchestration-worker-output'
-import { ORCHESTRATION_WORKER_CONTROL_METHODS } from './orchestration-worker-control'
-import { completeWorkerTerminalRelease } from './orchestration-worker-release-completion'
-import { readArchivedWorkerOutput } from './orchestration-worker-archive-read'
+import { ORCHESTRATION_WORKER_CONTROL_METHODS } from './orchestration/worker/worker-control'
+import { completeWorkerTerminalRelease } from './orchestration/worker/worker-release-completion'
+import { readArchivedWorkerOutput } from './orchestration/worker/worker-archive-read'
 
 vi.mock('../../orchestration/worker-transcript-read', () => ({
   readWorkerTranscript: vi.fn(async () => ({
