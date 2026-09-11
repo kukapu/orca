@@ -22,7 +22,7 @@ export class RuntimeLegacyWorkerTerminalRecoveryPersistence {
   ) {}
 
   prepare(): LegacyWorkerTerminalRecoveryPlan {
-    return this.getPlan() ?? { candidates: [], ambiguousDispatchIds: [] }
+    return this.getPlan() ?? { blockedPanes: [], candidates: [], ambiguousDispatchIds: [] }
   }
 
   async persist(

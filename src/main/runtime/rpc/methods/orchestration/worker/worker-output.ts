@@ -87,7 +87,7 @@ export async function readExactWorkerOutput(args: {
     session.providerSession.id,
     session.connectionId ?? 'local',
     transcript.filePath,
-    transcript.sourceFingerprint,
+    ...(transcript.sourceFingerprint ? [transcript.sourceFingerprint] : []),
     ...(transcript.sourceDigest ? [`digest:${transcript.sourceDigest}`] : [])
   ])
   if (cursor?.source === 'transcript' && cursor.sourceIdentity !== sourceIdentity) {
@@ -137,7 +137,9 @@ export async function readExactWorkerOutput(args: {
     warnings: transcript.warnings,
     sourceExact: true,
     contentComplete: !transcript.limited,
-    ...(transcript.clipping.length > 0 ? { clipping: transcript.clipping } : {})
+    ...(transcript.clipping && transcript.clipping.length > 0
+      ? { clipping: transcript.clipping }
+      : {})
   }
 }
 

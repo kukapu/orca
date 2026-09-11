@@ -233,9 +233,9 @@ describe('exact orchestration worker output', () => {
   })
 
   it('reads structured OpenCode output from the exact SQLite session', async () => {
-    const { default: Database } = await import('../../../sqlite/sync-database')
+    const { default: Database } = await import('../../../../../sqlite/sync-database')
     const { buildOpenCodeSqliteCandidatePath } =
-      await import('../../../ai-vault/session-scanner-opencode-sqlite-paths')
+      await import('../../../../../ai-vault/session-scanner-opencode-sqlite-paths')
     const db = new Database(join(directory, 'opencode.db'))
     db.exec(`
       CREATE TABLE session (
@@ -287,9 +287,9 @@ describe('exact orchestration worker output', () => {
   })
 
   it('rejects a stale cursor after a same-length part edit and serves the final content fresh', async () => {
-    const { default: Database } = await import('../../../sqlite/sync-database')
+    const { default: Database } = await import('../../../../../sqlite/sync-database')
     const { buildOpenCodeSqliteCandidatePath } =
-      await import('../../../ai-vault/session-scanner-opencode-sqlite-paths')
+      await import('../../../../../ai-vault/session-scanner-opencode-sqlite-paths')
     const dbPath = join(directory, 'opencode-stream.db')
     const db = new Database(dbPath)
     applyOpenCodeSqliteSchema(db)
@@ -342,9 +342,9 @@ describe('exact orchestration worker output', () => {
   })
 
   it('pages a stable OpenCode snapshot through the opaque cursor', async () => {
-    const { default: Database } = await import('../../../sqlite/sync-database')
+    const { default: Database } = await import('../../../../../sqlite/sync-database')
     const { buildOpenCodeSqliteCandidatePath } =
-      await import('../../../ai-vault/session-scanner-opencode-sqlite-paths')
+      await import('../../../../../ai-vault/session-scanner-opencode-sqlite-paths')
     const dbPath = join(directory, 'opencode-page.db')
     const db = new Database(dbPath)
     applyOpenCodeSqliteSchema(db)
@@ -403,9 +403,9 @@ describe('exact orchestration worker output', () => {
   })
 
   it('rejects the stale cursor when a message is appended', async () => {
-    const { default: Database } = await import('../../../sqlite/sync-database')
+    const { default: Database } = await import('../../../../../sqlite/sync-database')
     const { buildOpenCodeSqliteCandidatePath } =
-      await import('../../../ai-vault/session-scanner-opencode-sqlite-paths')
+      await import('../../../../../ai-vault/session-scanner-opencode-sqlite-paths')
     const dbPath = join(directory, 'opencode-append.db')
     const db = new Database(dbPath)
     applyOpenCodeSqliteSchema(db)
@@ -452,9 +452,9 @@ describe('exact orchestration worker output', () => {
   })
 
   it('rejects the stale cursor after a delete-and-reinsert keeps the message count', async () => {
-    const { default: Database } = await import('../../../sqlite/sync-database')
+    const { default: Database } = await import('../../../../../sqlite/sync-database')
     const { buildOpenCodeSqliteCandidatePath } =
-      await import('../../../ai-vault/session-scanner-opencode-sqlite-paths')
+      await import('../../../../../ai-vault/session-scanner-opencode-sqlite-paths')
     const dbPath = join(directory, 'opencode-reorder.db')
     const db = new Database(dbPath)
     applyOpenCodeSqliteSchema(db)
@@ -505,9 +505,9 @@ describe('exact orchestration worker output', () => {
   })
 
   it('signals source_changed when the last OpenCode message is deleted', async () => {
-    const { default: Database } = await import('../../../sqlite/sync-database')
+    const { default: Database } = await import('../../../../../sqlite/sync-database')
     const { buildOpenCodeSqliteCandidatePath } =
-      await import('../../../ai-vault/session-scanner-opencode-sqlite-paths')
+      await import('../../../../../ai-vault/session-scanner-opencode-sqlite-paths')
     const dbPath = join(directory, 'opencode-delete.db')
     const db = new Database(dbPath)
     db.exec(`
