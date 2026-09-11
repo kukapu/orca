@@ -65,6 +65,7 @@ export async function readOpenCodeWorkerTranscript(args: {
       messages: bounded.messages,
       nextOffset: page.nextOffset,
       ...(page.sourceDigest ? { sourceDigest: page.sourceDigest } : {}),
+      ...(page.boundaryCheckpoint ? { boundaryCheckpoint: page.boundaryCheckpoint } : {}),
       limited: page.limited || bounded.limited,
       warnings: [...page.warnings, ...bounded.warnings]
     }

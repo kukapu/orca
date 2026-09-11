@@ -80,6 +80,7 @@ function pageOpenCodeSqlite(
     messages: decoded.messages,
     nextOffset: end,
     sourceDigest: snapshot.digest,
+    boundaryCheckpoint: snapshot.digest,
     limited: end < snapshot.rows.length,
     warnings
   }
