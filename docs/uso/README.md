@@ -14,6 +14,7 @@ cuotas, versiones activas y tareas de cada ejecucion van en su checkpoint, no aq
 | Entender las prioridades y responsabilidades       | [Forma de trabajar](./forma-de-trabajar.md)               |
 | Saber donde estan el proyecto y sus procesos       | [Proyectos y entornos](./proyectos-y-entornos.md)         |
 | Trabajar en el fork e incorporar upstream         | [Flujo del fork y sincronizacion diaria](../reference/upstream-sync-automation.md) |
+| Preparar o retomar una release kukapu             | [Skill de releases del fork](../../.agents/skills/orca-fork-release/SKILL.md) |
 | Dividir, asignar y supervisar trabajo              | [Orquestacion](./orquestacion.md)                         |
 | Elegir modelo o recuperar un agente bloqueado      | [Modelos y recuperacion](./modelos-y-recuperacion.md)     |
 | Decidir si algo esta terminado y se puede entregar | [Verificacion y entrega](./verificacion-y-entrega.md)     |

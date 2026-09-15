@@ -14,6 +14,8 @@ Keep normal hooks, no force, and never use ours to resolve code integration.
 Review and explicitly port own changes since the last publication before updating
 the source; unknown edits block instead of being discarded. Before automated sync,
 follow [`docs/reference/upstream-sync-automation.md`](./docs/reference/upstream-sync-automation.md).
+For each fork release, load [orca-fork-release](./.agents/skills/orca-fork-release/SKILL.md)
+and follow its staged workflow and evidence template, including manual reconciliation.
 
 # Design System
 

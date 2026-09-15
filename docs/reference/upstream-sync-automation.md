@@ -3,6 +3,10 @@
 Decision del usuario, 2026-09-08. Sustituye el seguimiento diario de upstream/main.
 Esta pagina contiene el prompt canonico de la automatizacion existente.
 
+Para ejecutar una release paso a paso, cargar la skill del repositorio
+[orca-fork-release](../../.agents/skills/orca-fork-release/SKILL.md), que reutiliza
+este contrato y aporta plantillas de evidencia y reconciliacion manual.
+
 ## Referencias Y Responsabilidad
 
 - `main-kukapu` es la rama principal del fork; `origin/main-kukapu` su copia publicada.
@@ -33,6 +37,25 @@ desde la ultima publicacion P hasta el F actual y portar explicitamente los comm
 propios necesarios a la fuente antes del merge upstream normal. Cambios desconocidos,
 dependencias ambiguas o ausencia de esa evidencia bloquean; no descartarlos ni
 declarar exito «sin novedades» para ocultarlos.
+
+### Reconciliacion Manual De Una Base Aceptada
+
+Si faltan evidencias de una entrega anterior, el usuario puede aceptar
+explicitamente su version operativa como base de una preparacion manual. Antes
+de integrar, registrar la decision y verificar sourceTag/C, tag/OID oficial,
+linaje estable, puente P, arboles y todos los cambios propios posteriores. Seguir
+la [guia de reconciliacion](../../.agents/skills/orca-fork-release/references/reconcile-release.md).
+
+La aceptacion permite continuar manualmente desde la fuente reconciliada sin
+reconstruir la entrega historica solo para rellenar registros. No certifica gates,
+hashes ni procedencia del binario instalado; no permite crear markers terminados
+o manifiestos ficticios. La nueva release debe completar todos sus gates.
+Concurrencia, ejecuciones `unverifiable` y cambios desconocidos siguen bloqueando.
+El precheck automatico conserva su contrato estricto hasta disponer de procedencia
+durable valida; esta excepcion manual no altera su selector ni la automatizacion.
+
+Decision de base `.200`, 2026-09-15:
+[aceptacion y evidencia inicial](../releases/1.4.200-kukapu.1-reconciliation-20260915.md).
 
 ## Definicion Existente
 

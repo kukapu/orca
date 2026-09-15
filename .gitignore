@@ -156,7 +156,8 @@ playwright-report/
 
 # Agent skill installations (machine-local, populated by agent tooling)
 /.claude/skills/
-/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/orca-fork-release/
 /skills-lock.json
 
 # Generated Clawpatch state includes machine-local paths and review records.
