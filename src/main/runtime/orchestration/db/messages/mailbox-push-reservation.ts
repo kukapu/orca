@@ -1,10 +1,16 @@
 import type Database from '../../../../sqlite/sync-database'
 import { getPersistedSchemaCapabilities } from '../schema/persisted-schema-capabilities'
 
-// Old PTY push code cannot settle or retry a persisted reservation, including uncertain Enter.
-export function unreservedMailboxPushSql(db: Database.Database): string {
-  if (!getPersistedSchemaCapabilities(db).pointerReservations) {
-    return '1 = 1'
+// Only the unmigrated fork39 profile needs the legacy fence; official40 owns its pointer phases.
+export function unreservedMailboxPushSql(
+  db: Database.Database,
+  phase: 'selection' | 'settlement' = 'settlement'
+): string {
+  const capabilities = getPersistedSchemaCapabilities(db)
+  if (capabilities.profile !== 'fork39') {
+    return capabilities.pointerReservations && phase === 'selection'
+      ? 'pointer_enter_pending = 0'
+      : '1 = 1'
   }
   return `pointer_enter_pending = 0 AND NOT EXISTS (
     SELECT 1 FROM deliveries AS reserved_delivery

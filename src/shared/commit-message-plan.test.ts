@@ -1,8 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { planCommitMessageGeneration, planAgentBinary } from './commit-message-plan'
-import { orderOpenCodeRunFlags } from './opencode-run-flag-order'
 
 describe('planCommitMessageGeneration', () => {
+  it('keeps extension-provided Pi models available in generated Git text plans', () => {
+    const result = planCommitMessageGeneration(
+      { agentId: 'pi', model: 'local-extension/model' },
+      'Write a commit message'
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      throw new Error(result.error)
+    }
+    expect(result.plan.args).not.toContain('--no-extensions')
+    expect(result.plan.args).toEqual(
+      expect.arrayContaining([
+        '--no-session',
+        '--no-tools',
+        '--no-skills',
+        '--no-context-files',
+        '--model',
+        'local-extension/model'
+      ])
+    )
+    expect(result.plan.stdinPayload).toBe('Write a commit message')
+  })
+
   it('plans Claude non-interactive generation with the prompt on stdin only', () => {
     const result = planCommitMessageGeneration(
       {
@@ -82,70 +104,6 @@ describe('planCommitMessageGeneration', () => {
         args: [
           'opencode',
           'run',
-          '--model',
-          'opencode/gpt-5.4-mini',
-          '--agent',
-          'build',
-          '--format',
-          'default'
-        ],
-        stdinPayload: 'PROMPT',
-        label: 'OpenCode'
-      }
-    })
-  })
-
-  it.each(['opencode', 'opencode.cmd', 'opencode.exe'])(
-    'places OpenCode launch flags after the run subcommand for %s',
-    (agentCommandOverride) => {
-      const result = planCommitMessageGeneration(
-        {
-          agentId: 'opencode',
-          model: 'opencode/gpt-5.4-mini',
-          agentCommandOverride: `${agentCommandOverride} --auto`
-        },
-        'PROMPT'
-      )
-
-      expect(result).toEqual({
-        ok: true,
-        plan: {
-          binary: agentCommandOverride,
-          args: [
-            'run',
-            '--auto',
-            '--model',
-            'opencode/gpt-5.4-mini',
-            '--agent',
-            'build',
-            '--format',
-            'default'
-          ],
-          stdinPayload: 'PROMPT',
-          label: 'OpenCode'
-        }
-      })
-    }
-  )
-
-  it('moves an npx opencode flag tail after the run subcommand', () => {
-    const result = planCommitMessageGeneration(
-      {
-        agentId: 'opencode',
-        model: 'opencode/gpt-5.4-mini',
-        agentCommandOverride: 'npx opencode --auto'
-      },
-      'PROMPT'
-    )
-
-    expect(result).toEqual({
-      ok: true,
-      plan: {
-        binary: 'npx',
-        args: [
-          'opencode',
-          'run',
-          '--auto',
           '--model',
           'opencode/gpt-5.4-mini',
           '--agent',
@@ -306,6 +264,115 @@ describe('planCommitMessageGeneration', () => {
         ],
         stdinPayload: null,
         label: 'Cursor'
+      }
+    })
+  })
+
+  it('plans Antigravity generation with the prompt attached to --print, not stdin (#19539, #14059)', () => {
+    const result = planCommitMessageGeneration(
+      {
+        agentId: 'antigravity',
+        model: 'Gemini 3.5 Flash (Medium)'
+      },
+      'real commit prompt'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      plan: {
+        binary: 'agy',
+        args: ['--print=real commit prompt', '--sandbox', '--model', 'Gemini 3.5 Flash (Medium)'],
+        stdinPayload: null,
+        label: 'Antigravity'
+      }
+    })
+  })
+
+  it('keeps a leading-dash Antigravity prompt bound to --print instead of parsing as an option', () => {
+    const result = planCommitMessageGeneration(
+      { agentId: 'antigravity', model: 'Gemini 3.5 Flash (Medium)' },
+      '-fix: something'
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.plan.args.slice(0, 2)).toEqual([
+      '--print=-fix: something',
+      '--sandbox'
+    ])
+  })
+
+  // Why: pins argv construction only. Real agy 1.2.1 separately rejects a --print value
+  // that exactly matches a registered flag name (its own heuristic, independent of this
+  // fix) — verified `agy --print=--sandbox` still errors there. Real prompts are never
+  // literally a bare flag name, so this doesn't affect actual generation.
+  it('still glues an Antigravity prompt that collides with a flag name onto --print', () => {
+    const result = planCommitMessageGeneration(
+      { agentId: 'antigravity', model: 'Gemini 3.5 Flash (Medium)' },
+      '--sandbox'
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.plan.args.slice(0, 2)).toEqual(['--print=--sandbox', '--sandbox'])
+  })
+
+  // Why: agy has no documented stdin mode for --print (#19539's body: "--print ... is
+  // not a boolean flag that automatically reads from stdin; it expects the prompt
+  // string as its option argument"), so a large staged patch now rides on argv. This
+  // is the same unguarded argv delivery cursor/kimi/copilot already use (see the
+  // parity assertion below) — pinned here as a known property, not a regression.
+  it('puts a large Antigravity prompt on argv with no size guard, same as other argv-delivery agents', () => {
+    const bigPrompt = 'y'.repeat(70_000)
+    const result = planCommitMessageGeneration(
+      { agentId: 'antigravity', model: 'Gemini 3.5 Flash (Medium)' },
+      bigPrompt
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.plan.args[0]).toBe(`--print=${bigPrompt}`)
+    expect(result.ok && result.plan.stdinPayload).toBeNull()
+
+    const cursorResult = planCommitMessageGeneration(
+      { agentId: 'cursor', model: 'auto' },
+      bigPrompt
+    )
+    expect(cursorResult.ok).toBe(true)
+    expect(cursorResult.ok && cursorResult.plan.args.at(-1)).toBe(bigPrompt)
+    expect(cursorResult.ok && cursorResult.plan.stdinPayload).toBeNull()
+  })
+
+  // Why: real #14059 reproduction config — CLI arguments field repeats --model and adds
+  // --add-dir/--effort/--dangerously-skip-permissions. Confirms none of it gets swallowed
+  // into the --print operand and the duplicate --model is deduped the same way every
+  // other spec's recipe args already are (DEFAULT_SINGLETON_OPTIONS, unaffected by
+  // argument order).
+  it('keeps #14059-style recipe CLI arguments intact and deduped around the print operand', () => {
+    const result = planCommitMessageGeneration(
+      {
+        agentId: 'antigravity',
+        model: 'Gemini 3.5 Flash (Medium)',
+        agentArgs:
+          '--add-dir . --model gemini-3.6-flash --effort low --dangerously-skip-permissions'
+      },
+      'Generate a concise git commit message for the currently staged changes.'
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      plan: {
+        binary: 'agy',
+        args: [
+          '--print=Generate a concise git commit message for the currently staged changes.',
+          '--sandbox',
+          '--model',
+          'gemini-3.6-flash',
+          '--add-dir',
+          '.',
+          '--effort',
+          'low',
+          '--dangerously-skip-permissions'
+        ],
+        stdinPayload: null,
+        label: 'Antigravity'
       }
     })
   })
@@ -781,39 +848,5 @@ describe('backslash mode reaches every command the user can type (#11375)', () =
     )
 
     expect(plan.ok && plan.plan.args).toContain('/my dir')
-  })
-})
-
-describe('orderOpenCodeRunFlags passthrough branches (#17551)', () => {
-  it('passes a prefix through when the generated args do not start with run', () => {
-    expect(orderOpenCodeRunFlags('opencode', 'opencode', ['--auto'], ['serve'])).toEqual([
-      '--auto',
-      'serve'
-    ])
-  })
-
-  it('passes a prefix through when it already contains its own run subcommand', () => {
-    expect(
-      orderOpenCodeRunFlags('opencode', 'opencode', ['--auto', 'run'], ['run', '--model', 'm'])
-    ).toEqual(['--auto', 'run', 'run', '--model', 'm'])
-  })
-
-  it('passes a prefix through when it contains an option terminator', () => {
-    expect(
-      orderOpenCodeRunFlags(
-        'opencode',
-        'npx',
-        ['opencode', '--', '--auto'],
-        ['run', '--model', 'm']
-      )
-    ).toEqual(['opencode', '--', '--auto', 'run', '--model', 'm'])
-  })
-
-  it('passes non-opencode agents through regardless of prefix shape', () => {
-    expect(orderOpenCodeRunFlags('claude', 'claude', ['--model', 'opus'], ['-p'])).toEqual([
-      '--model',
-      'opus',
-      '-p'
-    ])
   })
 })

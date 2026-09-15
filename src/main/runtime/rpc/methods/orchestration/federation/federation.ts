@@ -1,5 +1,5 @@
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
-import { defineMethod, type RpcMethod } from '../../../core'
+import { defineMethod } from '../../../core'
 import { assertOrchestrationWorktreeCreationSupported } from '../worker/folder-worktree-placement'
 import { FederationAttachStartParams } from './federation-start-schema'
 import { prepareFederationAttachmentWorkerStart } from '../worker/worker-start-validation'
@@ -10,7 +10,7 @@ import {
 import { assertWorkerStartTaskSpecWithinPromptBudget } from '../worker/worker-start-prompt-budget'
 import { completeFederatedAttachStart } from './federation-attach-start'
 
-export const ORCHESTRATION_FEDERATION_ATTACH_METHODS: RpcMethod[] = [
+export const ORCHESTRATION_FEDERATION_ATTACH_METHODS = [
   defineMethod({
     name: 'orchestration.federationAttachStart',
     params: FederationAttachStartParams,
@@ -50,9 +50,7 @@ export const ORCHESTRATION_FEDERATION_ATTACH_METHODS: RpcMethod[] = [
       }
 
       if (agent && !params.terminal) {
-        // Why (#17943): this handler runs ON the worker server, so the fence
-        // below is the remote-server execution host. Fence before the remote
-        // attachment record exists so a missing agent CLI costs nothing.
+        // The worker execution host must validate availability before creating an attachment.
         if (createsWorktree) {
           await runtime.assertAgentLaunchableOnRepoHost(agent, params.repo as string)
         } else if (params.worktree) {

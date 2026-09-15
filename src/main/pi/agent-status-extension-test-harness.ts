@@ -28,6 +28,7 @@ type FakeCurlChild = {
 }
 
 export type AgentStatusExtensionHarness = {
+  killMock: ReturnType<typeof vi.fn>
   fetchMock: ReturnType<typeof vi.fn>
   spawnMock: ReturnType<typeof vi.fn>
   spawnedChildren: FakeCurlChild[]
@@ -61,6 +62,7 @@ export const AGENT_STATUS_EXTENSION_SELF_PID = 4242
 
 export function createAgentStatusExtensionHarness(args: {
   kind: 'pi' | 'omp' | 'prime-agent'
+  killImpl?: (pid: number, signal: number) => void
   env?: Record<string, string | undefined>
   pid?: number
   title?: string
@@ -120,20 +122,21 @@ export function createAgentStatusExtensionHarness(args: {
     throw new Error(`unexpected require(${specifier})`)
   })
 
+  const killMock = vi.fn(
+    args.kill ??
+      args.killImpl ??
+      ((pid: number) => {
+        throw Object.assign(new Error(`ESRCH: ${pid}`), { code: 'ESRCH' })
+      })
+  )
   const processMock = {
+    kill: killMock,
     env: {
       ...BASE_ENV,
       ...(args.kind === 'prime-agent' ? { PRIME_AGENT_INTERNAL_DAEMON_WORKER: '1' } : {}),
       ...args.env
     },
     pid: args.pid ?? AGENT_STATUS_EXTENSION_SELF_PID,
-    // Why: the ownership guard probes liveness with kill(pid, 0); default to
-    // ESRCH (dead) so claim decisions are deterministic without host pids.
-    kill:
-      args.kill ??
-      ((pid: number) => {
-        throw Object.assign(new Error(`ESRCH: ${pid}`), { code: 'ESRCH' })
-      }),
     title: args.title ?? 'node',
     argv: args.argv ?? ['node', '/usr/bin/orca']
   }
@@ -184,6 +187,7 @@ export function createAgentStatusExtensionHarness(args: {
 
   return {
     fetchMock,
+    killMock,
     spawnMock,
     spawnedChildren,
     fsMock,

@@ -48,14 +48,14 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
           '  return ompRuntime ? runtimeOmpSessionMetadata : sessionMetadata',
           '}',
           '',
-          'function getPersistedSessionMetadata(): Record<string, unknown> {',
-          '  const sessionFile = sessionMetadata.session_file',
+          'function getPersistedSessionMetadata(metadata: Record<string, unknown>): Record<string, unknown> {',
+          '  const sessionFile = metadata.session_file',
           "  if (typeof sessionFile !== 'string' || !sessionFile) return {}",
           '  try {',
           "    const fs = require('fs')",
           '    // Why: Pi publishes its planned path before creating the transcript;',
           '    // recheck on every post so the first completed turn becomes resumable.',
-          '    return fs.existsSync(sessionFile) ? sessionMetadata : {}',
+          '    return fs.existsSync(sessionFile) ? metadata : {}',
           '  } catch {',
           '    return {}',
           '  }',
@@ -84,7 +84,7 @@ export function getPiAgentStatusExtensionSource(kind: PiAgentKind = 'pi'): strin
   // Why: Pi resumes from an existing transcript; OMP resumes directly by session id (#8962).
   const payloadLine =
     kind !== 'omp'
-      ? '    payload: { hook_event_name: hookEventName, ...(ompRuntime ? metadata : getPersistedSessionMetadata()), ...extra },'
+      ? '    payload: { hook_event_name: hookEventName, ...(ompRuntime ? metadata : getPersistedSessionMetadata(metadata)), ...extra },'
       : '    payload: { hook_event_name: hookEventName, ...metadata, ...extra },'
 
   // Why: keep this string self-contained — it runs inside the pi process,

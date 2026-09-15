@@ -4,23 +4,14 @@ import { generateId } from '../generated-id'
 import type { OrchestrationDb } from '../orchestration-db'
 import { exposeDeliveryTimestamps, exposeMessageListTimestamps } from '../utc-timestamp'
 import { ORCHESTRATION_DELIVERY_BATCH_LIMIT } from './mailbox-routing-page'
+import { readDeliveryMessages } from './mailbox-delivery'
 
 export function getDeliveryRaw(this: OrchestrationDb, id: string): DeliveryRow | undefined {
   return this.db.prepare('SELECT * FROM deliveries WHERE id = ?').get(id) as DeliveryRow | undefined
 }
 
 export function getDeliveryMessages(this: OrchestrationDb, delivery: DeliveryRow): MessageRow[] {
-  const ids = JSON.parse(delivery.message_ids) as string[]
-  if (ids.length === 0) {
-    return []
-  }
-  const rows = this.db
-    .prepare(`SELECT * FROM messages WHERE id IN (${ids.map(() => '?').join(',')})`)
-    .all(...ids) as MessageRow[]
-  const byId = new Map(rows.map((row) => [row.id, row]))
-  return exposeMessageListTimestamps(
-    ids.map((id) => byId.get(id)).filter((row): row is MessageRow => row !== undefined)
-  )
+  return readDeliveryMessages(this, delivery)
 }
 
 export function getOrCreateMailboxDelivery(
@@ -156,9 +147,10 @@ export function acknowledgeMailboxDelivery(
           `UPDATE messages
            SET read = 1, pointer_enter_pending = 0, pointer_pty_id = NULL,
                pointer_process_incarnation = NULL
-           WHERE id IN (${placeholders})`
+            WHERE id IN (${placeholders}) AND run_id = ? AND to_handle = ?
+              AND delivery_contract = 'current_delivery'`
         )
-        .run(...messageIds)
+        .run(...messageIds, params.runId, params.mailboxHandle)
     }
     this.db
       .prepare(

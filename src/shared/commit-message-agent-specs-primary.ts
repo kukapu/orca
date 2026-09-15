@@ -199,7 +199,6 @@ export function buildPrimaryCommitMessageAgentSpecs({
         '--print',
         '--no-session',
         '--no-tools',
-        '--no-extensions',
         '--no-skills',
         '--no-context-files',
         '--mode',

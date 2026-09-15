@@ -37,13 +37,22 @@ function parseStructuredJournalArchive(
   if (
     !parsed ||
     typeof parsed !== 'object' ||
-    !Array.isArray((parsed as WorkerStructuredJournalArchive).messages)
+    !('version' in parsed) ||
+    parsed.version !== 1 ||
+    !('messages' in parsed) ||
+    !Array.isArray(parsed.messages) ||
+    !('warnings' in parsed) ||
+    !Array.isArray(parsed.warnings) ||
+    !parsed.warnings.every((warning) => typeof warning === 'string') ||
+    !('limited' in parsed) ||
+    typeof parsed.limited !== 'boolean'
   ) {
     throw new OrchestrationError(
       'archive_unavailable',
       `Dispatch ${dispatchId} preserved a malformed structured journal.`
     )
   }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The versioned archive envelope is checked above; message records are emitted by the journal projector.
   return parsed as WorkerStructuredJournalArchive
 }
 
@@ -97,6 +106,12 @@ export async function readArchivedWorkerOutput(args: {
       args,
       archive,
       JSON.parse(archive.content) as WorkerTranscriptSnapshotArchive
+    )
+  }
+  if (archive.kind !== 'terminal_tail') {
+    throw new OrchestrationError(
+      'archive_unavailable',
+      `Dispatch ${args.dispatchId} preserved an unknown archive kind.`
     )
   }
   if (args.source === 'transcript') {

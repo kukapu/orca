@@ -23,6 +23,7 @@ const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOv
   worktreeId,
   isActive,
   isWorktreeActive,
+  isFocusedGroup,
   target,
   onFocusOwningGroup
 }: {
@@ -31,6 +32,7 @@ const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOv
   worktreeId: string
   isActive: boolean
   isWorktreeActive: boolean
+  isFocusedGroup: boolean
   target: RuntimeClientTarget
   onFocusOwningGroup: ((groupId: string) => void) | undefined
 }): React.JSX.Element {
@@ -76,6 +78,7 @@ const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOv
         sessionId={tab.entityId}
         agent={tab.agentSessionAgent}
         isVisible={isActive}
+        isFocusedGroup={isFocusedGroup}
         target={target}
       />
     </div>
@@ -90,11 +93,12 @@ const StructuredAgentSessionPaneOverlayLayer = memo(
     worktreeId: string
     isWorktreeActive: boolean
   }): React.JSX.Element {
-    const { unifiedTabs, groups, runtimeEnvironmentId } = useAppStore(
+    const { unifiedTabs, groups, runtimeEnvironmentId, activeGroupId } = useAppStore(
       useShallow((state) => ({
         unifiedTabs: state.unifiedTabsByWorktree[worktreeId] ?? EMPTY_UNIFIED_TABS,
         groups: state.groupsByWorktree[worktreeId] ?? EMPTY_GROUPS,
-        runtimeEnvironmentId: getRuntimeEnvironmentIdForWorktree(state, worktreeId)
+        runtimeEnvironmentId: getRuntimeEnvironmentIdForWorktree(state, worktreeId),
+        activeGroupId: state.activeGroupIdByWorktree[worktreeId]
       }))
     )
     const focusGroup = useAppStore((state) => state.focusGroup)
@@ -130,6 +134,11 @@ const StructuredAgentSessionPaneOverlayLayer = memo(
             worktreeId={worktreeId}
             isActive={Boolean(isWorktreeActive && groupActiveTabById.get(tab.groupId) === tab.id)}
             isWorktreeActive={isWorktreeActive}
+            isFocusedGroup={Boolean(
+              isWorktreeActive &&
+              groupActiveTabById.get(tab.groupId) === tab.id &&
+              tab.groupId === activeGroupId
+            )}
             target={target}
             onFocusOwningGroup={focusOwningGroup}
           />

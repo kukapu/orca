@@ -1,15 +1,10 @@
-import { z } from 'zod'
 import { parseFederatedWorkerReportOutcome } from '../../../../orchestration/db/federated-worker-report-outcome'
-import { defineMethod, type RpcMethod } from '../../../core'
-import { requiredString } from '../../../schemas'
+import { defineMethod } from '../../../core'
+import { FederationDispatchParams } from '../../../../../../shared/rpc-contract/orchestration-federation-control-params'
 import { describeUnconfirmedAgentStop } from '../../../../../../shared/pty-liveness-verdict'
 import { inspectRemoteAttachment, requireHomeAttachment } from './federation-attachment-observation'
 
-const FederationDispatchParams = z.object({
-  dispatchId: requiredString('Missing Dispatch ID')
-})
-
-export const ORCHESTRATION_FEDERATION_STOP_METHODS: RpcMethod[] = [
+export const ORCHESTRATION_FEDERATION_STOP_METHODS = [
   defineMethod({
     name: 'orchestration.federationStop',
     params: FederationDispatchParams,

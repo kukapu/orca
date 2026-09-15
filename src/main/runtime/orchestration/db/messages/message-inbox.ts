@@ -105,7 +105,7 @@ export function getUndeliveredUnreadMessages(
     'to_handle = ?',
     'read = 0',
     'delivered_at IS NULL',
-    unreservedMailboxPushSql(this.db),
+    unreservedMailboxPushSql(this.db, 'selection'),
     "delivery_contract = 'current_delivery'"
   ]
   const params: (string | number)[] = [toHandle]
@@ -138,7 +138,7 @@ export function getUndeliveredUnreadMailboxHandles(this: OrchestrationDb): strin
       .prepare(
         `SELECT DISTINCT to_handle FROM messages
          WHERE read = 0 AND delivered_at IS NULL
-            AND ${unreservedMailboxPushSql(this.db)}
+            AND ${unreservedMailboxPushSql(this.db, 'selection')}
            AND delivery_contract = 'current_delivery'`
       )
       .all() as { to_handle: string }[]
@@ -171,21 +171,25 @@ export function markAsRead(this: OrchestrationDb, ids: string[]): void {
 
 // Why: use datetime('now') so delivered_at matches the space-format UTC shape of the table's other timestamps for correct ordering (§3.2).
 export function markAsDelivered(this: OrchestrationDb, ids: string[]): void {
+  const clear =
+    getPersistedSchemaCapabilities(this.db).profile === 'stable40' ? pointerClearSql(this) : ''
   runBatchedMessageMutation(
     this,
     ids,
     (placeholders) =>
-      `UPDATE messages SET delivered_at = datetime('now') WHERE id IN (${placeholders})
+      `UPDATE messages SET delivered_at = datetime('now')${clear} WHERE id IN (${placeholders})
        AND ${unreservedMailboxPushSql(this.db)}`
   )
 }
 
 export function markAsUndelivered(this: OrchestrationDb, ids: string[]): void {
+  const clear =
+    getPersistedSchemaCapabilities(this.db).profile === 'stable40' ? pointerClearSql(this) : ''
   runBatchedMessageMutation(
     this,
     ids,
     (placeholders) =>
-      `UPDATE messages SET delivered_at = NULL
+      `UPDATE messages SET delivered_at = NULL${clear}
        WHERE read = 0 AND id IN (${placeholders}) AND ${unreservedMailboxPushSql(this.db)}`
   )
 }

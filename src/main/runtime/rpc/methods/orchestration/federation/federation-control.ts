@@ -1,9 +1,6 @@
-import { z } from 'zod'
-import { ORCHESTRATION_WORKER_READ_SOURCES } from '../../../../../../shared/orchestration-worker-output'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import type { RemoteDispatchAttachmentRow } from '../../../../orchestration/types'
-import { defineMethod, type RpcMethod } from '../../../core'
-import { OptionalFiniteNumber, requiredString } from '../../../schemas'
+import { defineMethod } from '../../../core'
 import { mapWithConcurrency } from '../../../../../../shared/map-with-concurrency'
 import { orchestrationTimestampToMs, readExactWorkerOutput } from '../worker/worker-output'
 import {
@@ -16,24 +13,14 @@ import {
   releaseRemoteAttachment
 } from './federated-worker-release-host'
 import { ORCHESTRATION_FEDERATION_STOP_METHODS } from './federation-control-stop'
+import {
+  FederationDispatchParams,
+  FederationFleetSnapshotParams,
+  FederationOutputReadParams,
+  FederationReadParams
+} from '../../../../../../shared/rpc-contract/orchestration-federation-control-params'
 
-const FederationDispatchParams = z.object({
-  dispatchId: requiredString('Missing Dispatch ID')
-})
-const FederationReadParams = FederationDispatchParams.extend({
-  cursor: OptionalFiniteNumber,
-  limit: OptionalFiniteNumber
-})
-const FederationOutputReadParams = FederationDispatchParams.extend({
-  cursor: z.union([z.number().int().nonnegative(), z.string().min(1).max(2_048)]).optional(),
-  limit: OptionalFiniteNumber,
-  source: z.enum(ORCHESTRATION_WORKER_READ_SOURCES).optional()
-})
-const FederationFleetSnapshotParams = z.object({
-  dispatchIds: z.array(requiredString('Missing Dispatch ID')).min(1).max(100)
-})
-
-export const ORCHESTRATION_FEDERATION_CONTROL_METHODS: RpcMethod[] = [
+export const ORCHESTRATION_FEDERATION_CONTROL_METHODS = [
   defineMethod({
     name: 'orchestration.federationFleetSnapshot',
     params: FederationFleetSnapshotParams,

@@ -37,7 +37,7 @@ describe('worker-stop from a failed unobserved-prompt worker', () => {
 
   afterEach(() => db.close())
 
-  async function call(name: string, params: Record<string, unknown>) {
+  async function call(name: 'orchestration.workerStop', params: Record<string, unknown>) {
     const method = ORCHESTRATION_METHODS.find((candidate) => candidate.name === name)
     if (!method) {
       throw new Error(`Method not found: ${name}`)

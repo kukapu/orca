@@ -58,22 +58,24 @@ export function assertPersistedSchemaFileCompatibility(dbPath: string): void {
 // Inspect this connection before WAL, DDL, migrations, routing backfills, or file hardening.
 export function assertPersistedSchemaCompatibility(db: Database.Database): PersistedSchemaProfile {
   const version = db.pragma('user_version', { simple: true }) as number
+  if (!Number.isInteger(version) || version < 0 || version > 40) {
+    throw new UnsupportedPersistedSchemaError(version, 'unknown schema version')
+  }
   if (version === 39) {
     assertPersistedSchema39Shape(db)
     assertNoActiveStructuredWorkers(db)
     return 'fork39'
   }
-  if (version === 40) {
-    const homeRun = db.pragma('table_info(remote_dispatch_attachments)') as { name: string }[]
-    if (!homeRun.some((column) => column.name === 'home_run_id')) {
-      throw new UnsupportedPersistedSchemaError(
-        version,
-        'schema40 requires remote_dispatch_attachments.home_run_id'
-      )
-    }
+  // Official schema-skew recovery can repair older stamps; fork39 never had this column.
+  const hasOfficialHomeRun = db
+    .prepare(
+      "SELECT 1 FROM pragma_table_info('remote_dispatch_attachments') WHERE name = 'home_run_id'"
+    )
+    .get()
+  if (hasOfficialHomeRun) {
     return 'stable40'
   }
-  if (!Number.isInteger(version) || version < 0 || version > 30) {
+  if (version > 30) {
     throw new UnsupportedPersistedSchemaError(
       version,
       'only legacy/stable30, validated fork39, and official schema40 profiles are admitted'

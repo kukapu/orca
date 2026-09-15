@@ -1,4 +1,5 @@
 import type { TuiAgent } from '../../../../../../shared/tui-agent'
+import { describeTerminalWaitBlockedReason } from '../../../../../../shared/terminal-wait-blocked-reason-legacy-alias'
 import { buildDispatchPreamble } from '../../../../orchestration/preamble'
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import type { OrchestrationDb } from '../../../../orchestration/db'
@@ -188,7 +189,7 @@ export async function completeFederatedAttachStart(args: {
       failedStage = setup.state === 'failed' ? 'setup_wait' : failedStage
       throw new Error(
         wait.blockedReason
-          ? `Agent startup blocked: ${wait.blockedReason}`
+          ? `Agent startup blocked: ${describeTerminalWaitBlockedReason(wait.blockedReason)}`
           : `Agent did not become ready (${wait.status}).`
       )
     }

@@ -5,6 +5,7 @@ import {
 import { markCodexLeadTurnInterrupted } from '../../../shared/agent-hook-listener/providers/codex-state'
 import {
   isAgentInterruptInputIntent,
+  isNavigationEscapeIntent,
   type AgentInterruptInferenceRequest
 } from '../../../shared/agent-interrupt-intent'
 import {
@@ -20,7 +21,7 @@ import {
   isFenceScopedSource,
   isValidPaneKey
 } from './server-status-identity'
-import { AgentHookServerListeners } from './server-listeners'
+import { AgentHookServerRowOwnership } from './server-row-ownership'
 
 /** The fields the session-authority fence reads; live hook payloads and the
  *  disposition's event view are both structural supersets of this shape. */
@@ -32,7 +33,7 @@ type SessionFenceEventView = {
   payload?: { agentType?: AgentType }
 }
 
-export abstract class AgentHookServerStatusInference extends AgentHookServerListeners {
+export abstract class AgentHookServerStatusInference extends AgentHookServerRowOwnership {
   /** True only when the host registry positively knows this pane's live launch
    *  token and the given token differs: proof the event belongs to another
    *  Orca-mediated generation, not this pane's current process. Unknown
@@ -171,6 +172,11 @@ export abstract class AgentHookServerStatusInference extends AgentHookServerList
       existing.stateStartedAt !== request.baselineStateStartedAt ||
       Date.now() - existing.receivedAt > AGENT_STATUS_STALE_AFTER_MS
     ) {
+      return false
+    }
+    // Why: re-checked here, not only in the renderer, so a stale or direct inference request
+    // cannot route around the renderer's skip and synthesize a false stopped row.
+    if (isNavigationEscapeIntent(agentType, request.intent)) {
       return false
     }
     // Why: a 'working' pane can be child-driven; Ctrl+C doesn't stop background children, so inferring done would retire live child rows.
