@@ -91,6 +91,7 @@ describe('workerRead archive status through schema39 constructor and RPC', () =>
     db = new OrchestrationDb(path)
     const runtime = {
       getOrchestrationDb: () => db,
+      getOrchestrationFleetAgentStatusSnapshot: () => [],
       showTerminal: vi.fn(async () => {
         throw new Error('No PTY inventory')
       }),

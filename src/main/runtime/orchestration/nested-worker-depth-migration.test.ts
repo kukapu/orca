@@ -6,6 +6,7 @@ import Database from '../../sqlite/sync-database'
 import { OrchestrationDb } from './db'
 import { resolveOrchestrationMigrationStartVersion } from './orchestration-schema-version-skew'
 import { SCHEMA_VERSION } from './db/contract-constants'
+import { createPersistedSchemaFixture } from './db/schema/persisted-schema-test-fixture'
 
 /**
  * Backfilling to 1 rather than 0 is the whole point: every pre-v30 row belongs to
@@ -28,18 +29,16 @@ describe('nested worker depth migration (v30)', () => {
   function createV29Database(): string {
     tempDir = mkdtempSync(join(tmpdir(), 'orca-nested-depth-migration-'))
     const dbPath = join(tempDir, 'orchestration.db')
-    const fresh = new OrchestrationDb(dbPath)
-    fresh.close()
+    createPersistedSchemaFixture(dbPath, 30)
 
     const oldDb = new Database(dbPath)
     oldDb.exec('ALTER TABLE dispatch_contexts DROP COLUMN depth')
     oldDb.exec('ALTER TABLE remote_dispatch_attachments DROP COLUMN depth')
-    oldDb.exec('ALTER TABLE remote_dispatch_attachments DROP COLUMN home_run_id')
     oldDb.pragma('user_version = 29')
     oldDb
       .prepare(
         `INSERT INTO dispatch_contexts (id, run_id, task_id, contract_version, status)
-         VALUES ('ctx_inflight', 'run_legacy', 'task_legacy', 1, 'dispatched')`
+         VALUES ('ctx_inflight', 'r1', 'task_legacy', 1, 'dispatched')`
       )
       .run()
     oldDb
@@ -79,7 +78,7 @@ describe('nested worker depth migration (v30)', () => {
       )
       .run()
 
-    const task = db.createTask({ runId: 'run_legacy_local', spec: 'post-upgrade nesting attempt' })
+    const task = db.createTask({ runId: 'r1', spec: 'post-upgrade nesting attempt' })
     expect(() =>
       db!.createDispatchContext({
         taskId: task.id,

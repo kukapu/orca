@@ -61,11 +61,6 @@ export function assertPersistedSchemaCompatibility(db: Database.Database): Persi
   if (!Number.isInteger(version) || version < 0 || version > 40) {
     throw new UnsupportedPersistedSchemaError(version, 'unknown schema version')
   }
-  if (version === 39) {
-    assertPersistedSchema39Shape(db)
-    assertNoActiveStructuredWorkers(db)
-    return 'fork39'
-  }
   // Official schema-skew recovery can repair older stamps; fork39 never had this column.
   const hasOfficialHomeRun = db
     .prepare(
@@ -74,6 +69,22 @@ export function assertPersistedSchemaCompatibility(db: Database.Database): Persi
     .get()
   if (hasOfficialHomeRun) {
     return 'stable40'
+  }
+  if (version === 39) {
+    assertPersistedSchema39Shape(db)
+    assertNoActiveStructuredWorkers(db)
+    return 'fork39'
+  }
+  if (version > 30 && version < 39) {
+    const structuredStorage = db
+      .prepare(
+        `SELECT 1 FROM sqlite_master WHERE name = 'structured_pointer_operations'
+       OR (name = 'worker_terminal_archives' AND sql LIKE '%structured_journal%')`
+      )
+      .get()
+    if (!structuredStorage) {
+      return 'stable30'
+    }
   }
   if (version > 30) {
     throw new UnsupportedPersistedSchemaError(

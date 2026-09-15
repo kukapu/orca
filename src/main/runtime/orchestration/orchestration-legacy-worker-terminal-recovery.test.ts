@@ -26,6 +26,9 @@ function recoveryRow(
 describe('legacy worker terminal recovery planning', () => {
   it('retains completed Dispatches when the worker process row is still live', () => {
     expect(planLegacyWorkerTerminalRecovery([recoveryRow()])).toEqual({
+      blockedPanes: [
+        { worktreeId: 'repo::/workspace', paneKey: `tab-worker:${LEAF_ID}`, contractVersion: 0 }
+      ],
       candidates: [
         expect.objectContaining({
           dispatchId: 'dispatch-1',
@@ -41,6 +44,9 @@ describe('legacy worker terminal recovery planning', () => {
     expect(
       planLegacyWorkerTerminalRecovery([recoveryRow({ agent_terminal_handle: 'term-replacement' })])
     ).toEqual({
+      blockedPanes: [
+        { worktreeId: 'repo::/workspace', paneKey: `tab-worker:${LEAF_ID}`, contractVersion: 0 }
+      ],
       candidates: [],
       ambiguousDispatchIds: []
     })
@@ -75,6 +81,7 @@ describe('legacy worker terminal recovery planning', () => {
     ])
 
     expect(plan).toEqual({
+      blockedPanes: [],
       candidates: [],
       ambiguousDispatchIds: []
     })

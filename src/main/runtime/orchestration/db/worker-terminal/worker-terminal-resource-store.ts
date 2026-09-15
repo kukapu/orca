@@ -200,7 +200,7 @@ export function rebindWorkerTerminalResourceStatement(
       params.processIncarnation,
       params.terminalHandle
     ) ||
-    !['owned', 'external'].includes(resource.ownership_state) ||
+    !['owned', 'external', 'user_owned'].includes(resource.ownership_state) ||
     !resource.pane_key ||
     !isEquivalentPaneKey(resource.pane_key, params.paneKey) ||
     resource.process_incarnation !== params.processIncarnation ||

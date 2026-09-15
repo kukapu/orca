@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 import { OrcaRuntimeService } from '../../orca-runtime'
-import type { OrchestrationDb } from '../../orchestration/db'
+import { OrchestrationDb } from '../../orchestration/db'
 import type { WorkerTerminalResourceRow } from '../../orchestration/worker-terminal-ownership'
 import {
   mintStructuredWorkerPaneKey,
@@ -33,6 +33,12 @@ const WORKTREE = 'workspace-1'
 const SESSION = 'session-1'
 const HANDLE = 'structworker_11111111-1111-4111-a111-111111111111'
 const HOST_SCOPE = { kind: 'local', hostId: 'local' } as const
+const schemaDatabases: OrchestrationDb[] = []
+function currentSchema() {
+  const database = new OrchestrationDb(':memory:')
+  schemaDatabases.push(database)
+  return database.db
+}
 
 function installHost(options: { closeThrows?: boolean; lease?: Record<string, unknown> } = {}) {
   let attached = true
@@ -121,6 +127,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  for (const database of schemaDatabases.splice(0)) {
+    database.close()
+  }
   setStructuredAgentSessionHost(null)
   structuredWorkerIdentities.clear()
   vi.restoreAllMocks()
@@ -198,7 +207,9 @@ describe('structured worker release retires the chat tab', () => {
       ownership_state: 'owned',
       release_state: 'requested'
     } as WorkerTerminalResourceRow
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Release-only fixture supplies the required methods and a real current-schema connection.
     const db = {
+      db: currentSchema(),
       getWorkerDispatch: () => ({
         agent_terminal_handle: HANDLE,
         created_at: '2026-09-05 00:00:00'
@@ -251,7 +262,9 @@ describe('structured worker release retires the chat tab', () => {
       release_state: 'requested'
     } as unknown as WorkerTerminalResourceRow
     let stored: { kind?: string; content?: string } = {}
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Release-only fixture supplies the required methods and a real current-schema connection.
     const db = {
+      db: currentSchema(),
       getWorkerDispatch: () => ({
         agent_terminal_handle: HANDLE,
         created_at: '2026-09-05 00:00:00'

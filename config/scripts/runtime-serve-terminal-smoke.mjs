@@ -167,6 +167,27 @@ async function waitForNonce(pairingCode, terminalHandle, nonce) {
  * that could drift into asserting less.
  */
 function resolveLaunch(userDataDir) {
+  const artifactIndex = process.argv.indexOf('--artifact')
+  if (artifactIndex !== -1) {
+    const artifact = process.argv[artifactIndex + 1]
+    if (!artifact || !existsSync(artifact)) {
+      throw new Error('--artifact requires an existing AppImage')
+    }
+    return {
+      label: `AppImage (${resolve(artifact)})`,
+      command: resolve(artifact),
+      args: [
+        'serve',
+        '--port',
+        String(PORT),
+        '--json',
+        '--pairing-address',
+        '127.0.0.1',
+        `--user-data-dir=${userDataDir}`
+      ],
+      env: {}
+    }
+  }
   // Why a flag and not just an env var: package scripts have to set this on Windows too,
   // and `FOO=bar cmd` is not portable there.
   const flagIndex = process.argv.indexOf('--target')
@@ -212,7 +233,8 @@ function seedGitRepo() {
       throw new Error(`git ${args.join(' ')} failed: ${result.stderr || result.stdout}`)
     }
   }
-  git('init', '-b', 'main')
+  git('init')
+  git('checkout', '-b', 'main')
   git('config', 'user.email', 'smoke@orca.test')
   git('config', 'user.name', 'Orca Smoke')
   git('add', '-A')
@@ -240,6 +262,12 @@ async function main() {
     log(`ready: ${ready.advertisedEndpoint}`)
     const pairingCode = pairingCodeFrom(ready)
     pairing = pairingCode
+    const expectedVersion = process.env.ORCA_SMOKE_EXPECTED_VERSION
+    const status = orca(pairingCode, ['status'])
+    if (expectedVersion && status?.runtime?.appVersion !== expectedVersion) {
+      throw new Error(`Unexpected artifact version: ${status?.runtime?.appVersion}`)
+    }
+    log(`runtime version: ${status?.runtime?.appVersion ?? 'unreported'}`)
 
     // Why seed instead of using whatever the profile already holds: a hermetic repo makes
     // this runnable on a clean CI box, keeps the assertion deterministic, and exercises
@@ -406,4 +434,13 @@ async function main() {
   }
 }
 
-await main()
+if (process.argv.includes('--help')) {
+  console.log(
+    'Usage: node config/scripts/runtime-serve-terminal-smoke.mjs [--target electron|orcad | --artifact APPIMAGE] [--browser]'
+  )
+  console.log(
+    'Set ORCA_SMOKE_PORT_OFFSET and optionally ORCA_SMOKE_EXPECTED_VERSION. Use an isolated HOME/XDG and ORCA_BACKGROUND_LAUNCH=1.'
+  )
+} else {
+  await main()
+}

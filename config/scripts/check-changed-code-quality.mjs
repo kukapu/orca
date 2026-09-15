@@ -116,10 +116,24 @@ function resolveBase(root, requestedBase) {
   throw new Error('Pass the pull request base SHA or make origin/main available locally.')
 }
 
-export function collectAddedLineRanges(root, requestedBase) {
+export function intersectAddedLineRanges(left, right) {
+  return left.flatMap((a) =>
+    right.flatMap((b) => {
+      const start = Math.max(a.start, b.start)
+      const end = Math.min(a.end, b.end)
+      return start <= end ? [{ start, end }] : []
+    })
+  )
+}
+
+export function collectAddedLineRanges(root, requestedBase, mergedSource) {
   const base = resolveBase(root, requestedBase)
   const mergeBase = runGit(root, ['merge-base', base, 'HEAD']).trim()
   const comparisonBase = resolvePullRequestDiffBase(root, mergeBase)
+  if (mergedSource) {
+    // An unmerged ref must never hide changes introduced by the candidate.
+    runGit(root, ['merge-base', '--is-ancestor', mergedSource, 'HEAD'])
+  }
   const changedFiles = splitNullDelimited(
     runGit(root, ['diff', '--name-only', '-z', '--diff-filter=ACMRTUB', comparisonBase, '--'])
   )
@@ -137,7 +151,15 @@ export function collectAddedLineRanges(root, requestedBase) {
       continue
     }
     const diff = runGit(root, ['diff', '--unified=0', '--no-color', comparisonBase, '--', file])
-    const ranges = parseAddedLineRanges(diff)
+    const primaryRanges = parseAddedLineRanges(diff)
+    const ranges = mergedSource
+      ? intersectAddedLineRanges(
+          primaryRanges,
+          parseAddedLineRanges(
+            runGit(root, ['diff', '--unified=0', '--no-color', mergedSource, '--', file])
+          )
+        )
+      : primaryRanges
     if (ranges.length > 0) {
       rangesByFile.set(file, ranges)
     }
@@ -155,7 +177,7 @@ export function collectAddedLineRanges(root, requestedBase) {
     const lineCount = readFileSync(absolutePath, 'utf8').split(/\r?\n/).length
     rangesByFile.set(file, [{ start: 1, end: lineCount }])
   }
-  return { base, comparisonBase, rangesByFile }
+  return { base, comparisonBase, rangesByFile, mergedSource }
 }
 
 function parseOxlintOutput(stdout, label) {
@@ -379,9 +401,22 @@ function runOxlintScan(root, scan, files) {
 
 export function main(
   root = process.cwd(),
-  requestedBase = process.argv.slice(2).find((argument) => argument !== '--')
+  requestedBase = process.argv.slice(2).find((argument) => !argument.startsWith('--')),
+  mergedSource = process.argv
+    .slice(2)
+    .find((argument) => argument.startsWith('--merged-source='))
+    ?.slice('--merged-source='.length)
 ) {
-  const { base, comparisonBase, rangesByFile } = collectAddedLineRanges(root, requestedBase)
+  const { base, comparisonBase, rangesByFile } = collectAddedLineRanges(
+    root,
+    requestedBase,
+    mergedSource
+  )
+  if (mergedSource) {
+    console.log(
+      `Merge-resolution scope: lines changed from both ${comparisonBase} and ${mergedSource}; inherited findings remain outside this scope.`
+    )
+  }
   const files = [...rangesByFile.keys()]
   if (files.length === 0) {
     console.log(`Changed-code quality gate: no changed JavaScript or TypeScript since ${base}.`)

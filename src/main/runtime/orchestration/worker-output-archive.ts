@@ -119,7 +119,9 @@ export async function captureWorkerOutputArchive(args: {
         transcriptPath: session.providerSession.transcriptPath,
         wslDistro: session.wslDistro,
         limit: MAX_WORKER_TRANSCRIPT_MESSAGE_LIMIT,
-        connectionId: remoteFilesystemProvider ? undefined : session.connectionId,
+        ...(session.connectionId && !isWslSession && !remoteFilesystemProvider
+          ? { connectionId: session.connectionId }
+          : {}),
         filesystemProvider: remoteFilesystemProvider
       }).catch(() => null)
       if (snapshot?.ok && snapshot.messages.length > 0) {

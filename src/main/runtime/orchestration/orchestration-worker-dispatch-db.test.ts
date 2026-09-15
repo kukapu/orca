@@ -350,7 +350,7 @@ describe('OrchestrationDb worker Dispatch state', () => {
 
   it('settles an operator-close recorded by the pty-exit handler while the task is already blocked', () => {
     const d = createDb()
-    const task = d.createTask({ spec: 'operator close first' })
+    const task = d.createTask({ runId: 'run_legacy_local', spec: 'operator close first' })
     const started = d.createStartingWorkerDispatch({
       creator: { kind: 'system' },
       maxDepth: Number.MAX_SAFE_INTEGER,
@@ -384,7 +384,7 @@ describe('OrchestrationDb worker Dispatch state', () => {
 
   it('blocks a task left ready by an operator-close exit before settleWorkerStop', () => {
     const d = createDb()
-    const task = d.createTask({ spec: 'exit before stop settle' })
+    const task = d.createTask({ runId: 'run_legacy_local', spec: 'exit before stop settle' })
     const started = d.createStartingWorkerDispatch({
       creator: { kind: 'system' },
       maxDepth: Number.MAX_SAFE_INTEGER,
@@ -414,7 +414,7 @@ describe('OrchestrationDb worker Dispatch state', () => {
     'preserves settled workers on abandon but allows an unobserved prompt: %s',
     (state) => {
       const d = createDb()
-      const task = d.createTask({ spec: 'abandon recovery' })
+      const task = d.createTask({ runId: 'run_legacy_local', spec: 'abandon recovery' })
       const started = d.createStartingWorkerDispatch({
         creator: { kind: 'system' },
         maxDepth: Number.MAX_SAFE_INTEGER,

@@ -1,5 +1,6 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
 import { sessionIdFromStructuredWorkerIncarnation } from './structured-worker-identity'
+import { isPersistedStructuredWorkerIdentity } from './orchestration/persisted-structured-worker-identity'
 import { observeStructuredWorker } from './rpc/methods/orchestration-structured-worker-lifecycle'
 import { OrcaRuntimeWithApplyMobileDisplayMode } from './orca-runtime-apply-mobile-display-mode'
 import { addListenerToMap } from './orca-runtime-core'
@@ -170,6 +171,9 @@ export class OrcaRuntimeWithSubscribeToTerminalResize extends OrcaRuntimeWithApp
       // resource answer `unverifiable` forever and stay in `worker-list --terminalState retained`
       // for the life of the DB.
       return observeStructuredWorker({ sessionId: structuredSessionId }).status
+    }
+    if (isPersistedStructuredWorkerIdentity(processIncarnation)) {
+      return 'unverifiable'
     }
     const hostScope = parseWorkerTerminalHostScope(serializedHostScope)
     if (!hostScope || !this.ptyController?.listProcesses) {

@@ -66,34 +66,32 @@ describe('FTS5 aux functions take the table name, never an alias', () => {
   })
 })
 
-describe('a rowid constraint beside MATCH is honoured only as a subselect', () => {
-  it('ignores `rowid = ?` and returns every match, first row first', async () => {
+describe('portable rowid constraints beside MATCH', () => {
+  it('selects the requested match through a subselect across SQLite versions', async () => {
     const db = await openDatabase()
     insertMessageRow(db, FIRST_ROWID, 'alpha marmoset one')
     insertMessageRow(db, SECOND_ROWID, 'alpha capybara two')
 
     const rows = db
-      .prepare('SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid = ?')
-      .all('alpha', SECOND_ROWID) as { rowid: number }[]
-    // The planner drops the constraint entirely: both rows come back.
-    expect(rows.map((row) => row.rowid)).toEqual([FIRST_ROWID, SECOND_ROWID])
-    // A caller reading one row therefore gets the first match, not the one asked for.
+      .prepare('SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid IN (SELECT ?)')
+      .all('alpha', SECOND_ROWID)
+    expect(rows.map((row) => row.rowid)).toEqual([SECOND_ROWID])
     const single = db
-      .prepare('SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid = ?')
-      .get('alpha', SECOND_ROWID) as { rowid: number } | undefined
-    expect(single?.rowid).toBe(FIRST_ROWID)
+      .prepare('SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid IN (SELECT ?)')
+      .get('alpha', SECOND_ROWID)
+    expect(single?.rowid).toBe(SECOND_ROWID)
     db.close()
   })
 
-  it('ignores `rowid IN (?)` the same way', async () => {
+  it('does not leak another matching row when the requested rowid is absent', async () => {
     const db = await openDatabase()
     insertMessageRow(db, FIRST_ROWID, 'alpha marmoset one')
     insertMessageRow(db, SECOND_ROWID, 'alpha capybara two')
 
     const rows = db
-      .prepare('SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid IN (?)')
-      .all('alpha', SECOND_ROWID) as { rowid: number }[]
-    expect(rows.map((row) => row.rowid)).toEqual([FIRST_ROWID, SECOND_ROWID])
+      .prepare('SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? AND rowid IN (SELECT ?)')
+      .all('alpha', SECOND_ROWID + 1)
+    expect(rows).toEqual([])
     db.close()
   })
 

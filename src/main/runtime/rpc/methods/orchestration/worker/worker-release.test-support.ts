@@ -74,6 +74,9 @@ export function createOrchestrationWorkerReleaseHarness(): OrchestrationWorkerRe
         : null
     )
     vi.spyOn(runtime, 'validateOrchestrationAgentLauncher').mockImplementation(() => {})
+    vi.spyOn(runtime, 'assertAgentLaunchableOnWorkspaceHost').mockResolvedValue()
+    vi.spyOn(runtime, 'assertAgentLaunchableOnRepoHost').mockResolvedValue()
+    vi.spyOn(runtime, 'waitForWorkerAgentComposerReady').mockResolvedValue(true)
     vi.spyOn(runtime, 'showTerminal').mockImplementation(
       async (handle) => ({ handle, worktreeId: 'repo::worktree', status: 'running' }) as never
     )

@@ -61,18 +61,12 @@ non-Orca subagent tool when Orca orchestration provenance was requested.
   `live` / `unverifiable` / `exited`; contact loss is not process death.
 - Liveness is layered: `worker-list`'s `projection.liveness` is the fleet verdict
   for the agent; `worker-show`'s `observation.status` is PTY liveness only. A live
-  terminal can still hold a dead or stuck agent. Occupancy is not liveness: a
-  stalled-failed remote attachment still occupies its pane. Bind
-  `agent_prompt_stalled` wherever occupancy is checked. A stalled prompt is not
-  `exited`.
-- Persisted orchestration admits schema 30 and schema 39 (39 is not migrated).
-  Schema 40 is official and carries `home_run_id` on remote attachments.
+  terminal can still hold a dead or stuck agent; occupancy is not liveness.
 - Folder workspaces are valid; never require Git or assume a worktree.
 - Clients and remote servers update independently. Treat unknown optional fields
   as absent. A new stream operation requires advertised capability because old
   decoders may silently drop unknown opcodes. Never fall back to local execution
-  when remote authority or capability is unproven. Changing host-published
-  content reaches old clients even without a wire-shape change.
+  when remote authority or capability is unproven. Host-content changes reach old clients.
 - Use the executable you used to run `skills get` for the entire run. In the
   examples below, replace `ORCA` with it; do not create a shell variable or run
   `ORCA` literally. If it fails, report that exact error instead of switching.

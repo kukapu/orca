@@ -16,9 +16,10 @@ const ACTIVE_ASSIGNEE_STATUS_SQL = `status IN ('pending', 'dispatched')`
 
 function dispatchContextProjection(db: OrchestrationDb): string {
   const present = new Set(
-    (db.db.pragma('table_info(dispatch_contexts)') as { name: string }[]).map(
-      (column) => column.name
-    )
+    db.db
+      .prepare("SELECT name FROM pragma_table_info('dispatch_contexts')")
+      .all()
+      .map((column) => column.name)
   )
   return selectColumns(DISPATCH_CONTEXT_COLUMNS.filter((column) => present.has(column)))
 }

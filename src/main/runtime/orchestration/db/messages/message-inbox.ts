@@ -133,16 +133,20 @@ export function getUndeliveredUnreadMessages(
 }
 
 export function getUndeliveredUnreadMailboxHandles(this: OrchestrationDb): string[] {
-  return (
-    this.db
-      .prepare(
-        `SELECT DISTINCT to_handle FROM messages
+  return this.db
+    .prepare(
+      `SELECT DISTINCT to_handle FROM messages
          WHERE read = 0 AND delivered_at IS NULL
             AND ${unreservedMailboxPushSql(this.db, 'selection')}
            AND delivery_contract = 'current_delivery'`
-      )
-      .all() as { to_handle: string }[]
-  ).map((row) => row.to_handle)
+    )
+    .all()
+    .map((row) => {
+      if (typeof row.to_handle !== 'string') {
+        throw new Error('Invalid persisted mailbox handle')
+      }
+      return row.to_handle
+    })
 }
 
 export function getAllMessages(this: OrchestrationDb, toHandle: string, limit = 20): MessageRow[] {

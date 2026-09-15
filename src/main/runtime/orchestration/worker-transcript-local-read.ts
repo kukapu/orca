@@ -77,13 +77,20 @@ export async function readForwardLocalWorkerTranscriptPage(
   startOffset: number,
   limit: number,
   decode: NativeChatLineDecoder,
-  expectedBoundaryCheckpoint?: string
+  expectedBoundaryCheckpoint?: string,
+  endOffset?: number
 ): Promise<LocalTranscriptReadResult> {
   const sourceIdentity = await readLocalTranscriptSourceIdentity(filePath)
   if (!sourceIdentity) {
     return { ok: false, reason: 'transcript_unreadable', warnings: [] }
   }
-  const fileSize = sourceIdentity.size
+  if (
+    endOffset !== undefined &&
+    (!Number.isSafeInteger(endOffset) || endOffset < 0 || endOffset > sourceIdentity.size)
+  ) {
+    return sourceChanged()
+  }
+  const fileSize = endOffset ?? sourceIdentity.size
   if (startOffset > fileSize) {
     return sourceChanged()
   }

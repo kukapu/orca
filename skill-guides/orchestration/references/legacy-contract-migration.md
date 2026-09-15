@@ -32,6 +32,11 @@ inject a terminal.
 
 ## Compatibility recovery
 
+The fork admits validated schema39 without migrating its historical records.
+Official schema40 carries `home_run_id` on remote attachments; legacy official
+schemas use the normal migration chain. Never lower a schema stamp or recreate
+tables to bypass admission checks.
+
 When a compatibility response returns structured next-step arguments, execute
 those exact arguments with the same selected CLI executable. Do not translate
 from memory, broaden the recipient, or retry as a current mutation unless the

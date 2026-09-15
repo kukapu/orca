@@ -168,15 +168,16 @@ describe('accepted report bridge on physical persisted DB39', () => {
     expect(db.getTask('t1')?.status).toBe('dispatched')
   })
 
-  it('keeps DB30 schema unchanged and never creates an observation table', () => {
+  it('keeps the migrated DB30 schema unchanged while accepting a report', () => {
     fixture = workerReportPersistedFixture(30)
     const { db } = fixture
     const before = db.db.prepare('SELECT * FROM sqlite_master ORDER BY name').all()
+    const version = db.db.pragma('user_version', { simple: true })
     expect(reconcileLifecycleMessage(db, db.insertMessage(reportMessage())).action).toBe(
       'completed'
     )
     expect(db.db.prepare('SELECT * FROM sqlite_master ORDER BY name').all()).toEqual(before)
-    expect(db.db.pragma('user_version', { simple: true })).toBe(30)
+    expect(db.db.pragma('user_version', { simple: true })).toBe(version)
   })
 
   it.each(['succeeded', 'failed'] as const)(

@@ -85,6 +85,7 @@ function installHost() {
 
 function fakes() {
   const retireStructuredAgentSessionTabFromSnapshot = vi.fn(() => true)
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: Partial runtime fixture implements the paths exercised before the forced preamble rejection.
   const runtime = {
     showTerminal: async () => ({ worktreeId: WORKTREE }),
     showManagedTerminalWorkspace: async () => ({ id: WORKTREE }),
@@ -100,6 +101,7 @@ function fakes() {
     }),
     forgetStructuredSessionMail: vi.fn(),
     validateOrchestrationAgentLauncher: vi.fn(),
+    assertAgentLaunchableOnWorkspaceHost: vi.fn(async () => {}),
     getTerminalProcessIncarnation: vi.fn(() => 'inc_1'),
     getTerminalPaneKey: vi.fn(() => 'pane_1'),
     retireStructuredAgentSessionTabFromSnapshot

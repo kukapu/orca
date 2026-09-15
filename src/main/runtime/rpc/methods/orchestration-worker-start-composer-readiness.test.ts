@@ -148,6 +148,14 @@ async function createComposerHarness(scenario: ComposerScenario): Promise<Compos
     repoId: 'repo-1'
   } as never)
   vi.spyOn(runtime, 'isTerminalRunningAgent').mockResolvedValue(true)
+  // Idle evidence and composer mounting are independent gates; this suite exercises the latter.
+  vi.spyOn(runtime, 'waitForTerminal').mockResolvedValue({
+    handle,
+    condition: 'tui-idle',
+    satisfied: true,
+    status: 'running',
+    exitCode: null
+  })
   vi.spyOn(runtime, 'showRepo').mockResolvedValue({ id: 'repo-1', kind: 'git' } as never)
   vi.spyOn(runtime, 'createManagedWorktree').mockResolvedValue({
     worktree: { id: AGENT_PROMPT_TEST_WORKTREE_ID, repoId: 'repo-1' },
@@ -207,8 +215,7 @@ describe('orchestration worker-start OpenCode composer readiness', () => {
     const harness = await createComposerHarness('late-mount')
     const pending = harness.dispatcher.dispatch(harness.request)
 
-    // tui-idle can settle via the foreground fallback inside the documented
-    // pre-composer silence; the paste must still wait for the show-cursor.
+    // Even with positive idle evidence, paste must wait for the show-cursor.
     await vi.advanceTimersByTimeAsync(6_000)
     expect(harness.writes.some((data) => data.includes(AGENT_PROMPT_BRACKETED_PASTE_END))).toBe(
       false

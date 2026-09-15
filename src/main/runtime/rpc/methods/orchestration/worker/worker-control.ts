@@ -15,6 +15,7 @@ import { readStructuredWorkerOutput } from '../../orchestration-structured-worke
 import { releaseStructuredWorkerSession } from '../../orchestration-structured-worker-session'
 import { orchestrationTimestampToMs, readExactWorkerOutput } from './worker-output'
 import { exposeWorkerTerminalResource } from './worker-release-completion'
+import { getPersistedSchemaCapabilities } from '../../../../orchestration/db/schema/persisted-schema-capabilities'
 import {
   buildWorkerObservedOptionsObservation,
   workerIdentityNotExactObservedOptions
@@ -126,11 +127,21 @@ export const ORCHESTRATION_WORKER_CONTROL_METHODS = [
         )
       }
       const resource = db.getWorkerTerminalResourceByOwner(params.dispatch)
-      if (resource && ['releasing', 'unknown', 'released'].includes(resource.release_state)) {
+      const preservedJournal =
+        resource &&
+        getPersistedSchemaCapabilities(db.db).profile === 'fork39' &&
+        db.getWorkerTerminalArchive(params.dispatch)?.kind === 'structured_journal'
+      if (
+        resource &&
+        (preservedJournal || ['releasing', 'unknown', 'released'].includes(resource.release_state))
+      ) {
         // Archive capture is not close evidence; recheck the execution host while releasing.
         let liveness: 'live' | 'unverifiable' | 'exited' =
           resource.release_state === 'released' ? 'exited' : 'unverifiable'
-        if (resource.release_state === 'releasing') {
+        if (
+          resource.release_state === 'releasing' &&
+          getPersistedSchemaCapabilities(db.db).profile !== 'fork39'
+        ) {
           const observed = await inspectWorkerTerminal(runtime, db, params.dispatch)
           liveness =
             observed.status === 'live'

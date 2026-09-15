@@ -112,14 +112,15 @@ export async function readWorkerTranscript(args: {
   const limit = clampWorkerTranscriptLimit(args.limit)
   try {
     const page =
-      args.offset === undefined
+      args.offset === undefined && args.endOffset === undefined
         ? await readInitialLocalWorkerTranscriptPage(filePath, limit, decode)
         : await readForwardLocalWorkerTranscriptPage(
             filePath,
-            args.offset,
+            args.offset ?? 0,
             limit,
             decode,
-            args.expectedBoundaryCheckpoint
+            args.expectedBoundaryCheckpoint,
+            args.endOffset
           )
     if (!page.ok) {
       return page

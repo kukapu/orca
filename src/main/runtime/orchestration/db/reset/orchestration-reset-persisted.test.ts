@@ -61,16 +61,17 @@ describe('explicit resets of additive persisted storage', () => {
   )
 
   it.each(['resetAll', 'resetTasks', 'resetMessages'] as const)(
-    '%s does not create missing DB30 tables',
+    '%s does not change the migrated DB30 schema',
     (reset) => {
       fixture = workerReportPersistedFixture(30)
       const { db } = fixture
+      const version = db.db.pragma('user_version', { simple: true })
       const schema = db.db.prepare('SELECT * FROM sqlite_master ORDER BY name').all()
       const unknown = db.db.prepare('SELECT * FROM unknown_fork_facts').all()
       db[reset]()
       expect(db.db.prepare('SELECT * FROM sqlite_master ORDER BY name').all()).toEqual(schema)
       expect(db.db.prepare('SELECT * FROM unknown_fork_facts').all()).toEqual(unknown)
-      expect(db.db.pragma('user_version', { simple: true })).toBe(30)
+      expect(db.db.pragma('user_version', { simple: true })).toBe(version)
     }
   )
 })

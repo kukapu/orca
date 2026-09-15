@@ -29,7 +29,8 @@ function runInteractiveBash(
     {
       input,
       encoding: 'utf8',
-      env: { ...process.env, HOME: tempHome, ORCA_SHELL_FEATURES: 'ready', TERM: 'xterm' },
+      // Isolate Orca's explicit OSC markers from distro-installed prompt integrations.
+      env: { ...process.env, HOME: tempHome, ORCA_SHELL_FEATURES: 'ready', TERM: 'dumb' },
       timeout: 5000
     }
   )

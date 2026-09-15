@@ -13,8 +13,11 @@ describe('native chat layering', () => {
       'src/renderer/src/components/terminal-pane/TerminalOverlaySlot.tsx',
       'src/renderer/src/components/native-chat/StructuredAgentSessionPaneOverlayLayer.tsx'
     ]) {
-      expect(source(path)).toContain('useOverlaySlotGeometry')
+      expect(source(path)).toContain('measuredGeometry={measuredGeometry}')
     }
+    expect(source('src/renderer/src/components/tab-group/RetainedPaneHost.tsx')).toContain(
+      'useOverlaySlotGeometry'
+    )
     expect(css).not.toMatch(/\.native-chat-pane-shell:has\(\[data-native-chat-working/)
     expect(css).toMatch(/\[data-sonner-toaster\][^{]*\{[^}]*z-index:\s*40\s*!important;/s)
   })

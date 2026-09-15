@@ -15,6 +15,10 @@ decision, stop/abandon request, retention request, or uncertain release.
 
 ## Inspect before acting
 
+A stalled-failed remote attachment still occupies its pane. Include
+`agent_prompt_stalled` wherever occupancy is checked; a stalled prompt is not
+proof of `exited` and cannot authorize a duplicate worker.
+
 ```text
 ORCA orchestration worker-list --run <run_id> --json
 ORCA orchestration worker-list --run <run_id> --include-remote --json

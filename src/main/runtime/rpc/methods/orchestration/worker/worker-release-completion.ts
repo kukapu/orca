@@ -19,21 +19,18 @@ import { workerTerminalLeaseIsCurrent } from './worker-terminal-release-lease'
 import { resolveStructuredWorkerForDispatch } from '../../orchestration-structured-worker-lifecycle'
 import { stopStructuredWorkerForRelease } from './structured-worker-release-stop'
 import { isStructuredWorkerHandle } from '../../../../structured-worker-identity'
+import {
+  fork39StructuredReleaseReceipt,
+  releaseUnknownRecovery,
+  retainUnprovenRelease,
+  type WorkerReleaseReceipt
+} from './worker-release-receipt'
 
 export {
   archiveSummary,
   exposeWorkerTerminalResource
 } from './worker-terminal-resource-presentation'
-
-export type WorkerReleaseReceipt = {
-  dispatchId: string
-  state: 'released' | 'already_released' | 'retained' | 'release_pending' | 'release_unknown'
-  reason?: WorkerTerminalRetainedReason
-  processAction: 'closed_agent_terminal' | 'closed_exited_terminal' | 'none'
-  archive: { source: string | null; status: string | null } | null
-  recovery?: string
-  lastError?: string
-}
+export { releaseUnknownRecovery, type WorkerReleaseReceipt } from './worker-release-receipt'
 
 type WorkerTerminalReleaseArgs = {
   runtime: OrcaRuntimeService
@@ -58,6 +55,10 @@ const activeReleaseByRuntime = new WeakMap<
 export function completeWorkerTerminalRelease(
   args: WorkerTerminalReleaseArgs
 ): Promise<WorkerReleaseReceipt> {
+  const blocked = fork39StructuredReleaseReceipt(args.db, args.dispatchId, args.resource)
+  if (blocked) {
+    return Promise.resolve(blocked)
+  }
   let activeByResource = activeReleaseByRuntime.get(args.runtime)
   if (!activeByResource) {
     activeByResource = new Map()
@@ -111,25 +112,11 @@ async function completeWorkerTerminalReleaseOnce(
   }
   const worker = db.getWorkerDispatch(dispatchId)
   if (!worker || worker.agent_terminal_handle !== resource.terminal_handle) {
-    const retained = db.revertWorkerTerminalReleaseToRetained(resource.id, 'identity_unproven')
-    return {
-      dispatchId,
-      state: 'retained',
-      reason: 'identity_unproven',
-      processAction: 'none',
-      archive: archiveSummary(retained)
-    }
+    return retainUnprovenRelease(db, dispatchId, resource.id)
   }
   const observation = await inspectWorkerTerminal(runtime, db, dispatchId)
   if (observation.status === 'identity_changed') {
-    const retained = db.revertWorkerTerminalReleaseToRetained(resource.id, 'identity_unproven')
-    return {
-      dispatchId,
-      state: 'retained',
-      reason: 'identity_unproven',
-      processAction: 'none',
-      archive: archiveSummary(retained)
-    }
+    return retainUnprovenRelease(db, dispatchId, resource.id)
   }
   if (observation.status === 'missing' || observation.status === 'unattached') {
     if (args.mode === 'recovery') {
@@ -185,14 +172,7 @@ async function completeWorkerTerminalReleaseOnce(
   }
 
   if (!workerTerminalLeaseIsCurrent(runtime, db, dispatchId, resource)) {
-    const retained = db.revertWorkerTerminalReleaseToRetained(resource.id, 'identity_unproven')
-    return {
-      dispatchId,
-      state: 'retained',
-      reason: 'identity_unproven',
-      processAction: 'none',
-      archive: archiveSummary(retained)
-    }
+    return retainUnprovenRelease(db, dispatchId, resource.id)
   }
   const archive = db.getWorkerTerminalArchive(dispatchId)
   let archiveSource = resource.archive_source as 'transcript' | 'terminal' | null
@@ -232,14 +212,7 @@ async function completeWorkerTerminalReleaseOnce(
     }
   }
   if (!workerTerminalLeaseIsCurrent(runtime, db, dispatchId, releasing)) {
-    const retained = db.revertWorkerTerminalReleaseToRetained(resource.id, 'identity_unproven')
-    return {
-      dispatchId,
-      state: 'retained',
-      reason: 'identity_unproven',
-      processAction: 'none',
-      archive: archiveSummary(retained)
-    }
+    return retainUnprovenRelease(db, dispatchId, resource.id)
   }
 
   try {
@@ -305,10 +278,6 @@ async function completeWorkerTerminalReleaseOnce(
       observation.status === 'exited' ? 'closed_exited_terminal' : 'closed_agent_terminal',
     archive: archiveSummary(released)
   }
-}
-
-export function releaseUnknownRecovery(dispatchId: string): string {
-  return `Inspect with: orca orchestration worker-show --dispatch ${dispatchId} --json — then retry worker-release with a fresh request ID (omit --retry-request to let the CLI generate one). Reusing the prior request ID only replays this release_unknown receipt. Never substitute a broad terminal close.`
 }
 
 function retainedReason(resource: WorkerTerminalResourceRow): WorkerTerminalRetainedReason {

@@ -45,8 +45,10 @@ describe('worker start outcome classification', () => {
       residual_resources: '[]'
     }))
     const receipt = failStart({
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: This fixture exercises only receipt creation with no retained terminal resource.
       db: {
         failWorkerStart: recordFailure,
+        getWorkerTerminalResourceByOwner: vi.fn(),
         failRemoteAttachment: recordFailure
       } as unknown as OrchestrationDb,
       runId: 'run_test',

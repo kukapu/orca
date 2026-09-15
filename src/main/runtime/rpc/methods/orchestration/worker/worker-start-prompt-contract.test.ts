@@ -395,7 +395,7 @@ describe('orchestration worker-start prompt contract', () => {
         retryOf: dispatchId,
         startOptions: {}
       })
-    ).toThrow('agent_prompt_stalled')
+    ).toThrowError(expect.objectContaining({ code: 'task_not_startable' }))
     const callerFingerprint = persisted.getOrCreateLocalMutationCallerFingerprint()
     const receipt = persisted.getMutationReceipt(callerFingerprint, harness.requestId)
     expect(receipt).toMatchObject({ state: 'completed' })

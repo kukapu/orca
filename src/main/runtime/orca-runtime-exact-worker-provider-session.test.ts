@@ -11,28 +11,29 @@ type ExactWorkerProviderSessionHost = {
 
 /** Drives the shipping method, not the selector helper: the wiring is what regressed. */
 function selectThroughRuntime(statusConnectionId: string | null): unknown {
-  const runtime = {
-    getTerminalPaneKey: () => PANE_KEY,
-    getTerminalProcessIncarnation: () => 'pty-wsl:inc-1',
-    getTerminalAgentStatusPtyId: () => PTY_ID,
-    ptysById: new Map([
-      [PTY_ID, { connectionId: null, launchToken: 'launch-1', wslDistro: 'Ubuntu' }]
-    ]),
-    wslDistroByPtyId: new Map([[PTY_ID, 'Ubuntu']]),
-    getAgentStatusSnapshotFn: () => [
-      {
-        paneKey: PANE_KEY,
-        connectionId: statusConnectionId,
-        launchToken: 'launch-1',
-        agentType: 'codex',
-        receivedAt: 500,
-        providerSession: { key: 'session_id', id: 's1', transcriptPath: '/t.jsonl' }
-      }
-    ]
-  }
-  return (
-    OrcaRuntimeWithGetTerminalInteractiveWait.prototype as unknown as ExactWorkerProviderSessionHost
-  ).getExactWorkerProviderSession.call(runtime as never, 'term_wsl', 0)
+  const runtime: ExactWorkerProviderSessionHost = Object.assign(
+    Object.create(OrcaRuntimeWithGetTerminalInteractiveWait.prototype),
+    {
+      getTerminalPaneKey: () => PANE_KEY,
+      getTerminalProcessIncarnation: () => 'pty-wsl:inc-1',
+      getTerminalAgentStatusPtyId: () => PTY_ID,
+      ptysById: new Map([
+        [PTY_ID, { connectionId: null, launchToken: 'launch-1', wslDistro: 'Ubuntu' }]
+      ]),
+      wslDistroByPtyId: new Map([[PTY_ID, 'Ubuntu']]),
+      getAgentStatusSnapshotFn: () => [
+        {
+          paneKey: PANE_KEY,
+          connectionId: statusConnectionId,
+          launchToken: 'launch-1',
+          agentType: 'codex',
+          receivedAt: 500,
+          providerSession: { key: 'session_id', id: 's1', transcriptPath: '/t.jsonl' }
+        }
+      ]
+    }
+  )
+  return runtime.getExactWorkerProviderSession('term_wsl', 0)
 }
 
 describe('exact worker provider session wiring', () => {

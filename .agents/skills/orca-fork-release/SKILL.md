@@ -75,6 +75,8 @@ no repetir builds cuyos inputs y evidencia siguen siendo validos.
 - Integrar el OID verificado del tag oficial mediante merge normal. No integrar
   `upstream/main`, rebase ni aplicar ours/theirs masivo para resolver codigo.
 - Revisar el delta upstream y fork, los conflictos y los solapamientos sin conflicto.
+  Aplicar la lista de [fallos recurrentes](references/recurring-merge-failures.md)
+  y registrar causas/precedentes para acelerar la siguiente integracion.
   Para cada conflicto anotar intencion de ambos lados, solucion y regresion cubierta.
   Buscar implementaciones existentes antes de conservar dos caminos equivalentes.
 - Revisar contratos afectados: SSH y autoridad del host, folder workspaces,

@@ -24,7 +24,8 @@ export function runInteractiveBashRcfile(rcfileContent: string, tempDir: string)
         ...process.env,
         HOME: tempDir,
         ORCA_SHELL_FEATURES: 'ready',
-        TERM: process.env.TERM || 'xterm'
+        // System profile integrations must not add their own prompt/preexec hooks to this fixture.
+        TERM: 'dumb'
       },
       timeout: 5000
     }

@@ -23,7 +23,8 @@ function runInteractiveBashRcfile(
       env: {
         ...process.env,
         HOME: homeDir,
-        TERM: process.env.TERM || 'xterm'
+        // Keep distro prompt integrations out of the controlled OSC lifecycle fixture.
+        TERM: 'dumb'
       },
       timeout: 5000
     }

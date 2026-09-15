@@ -1,12 +1,11 @@
-import { memo, useCallback, useMemo, useRef } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { Tab, TabGroup } from '../../../../shared/tab-types'
 import { isAgentSessionHandleProvider } from '../../../../shared/agent-session-provider-handle'
 import { useAppStore } from '@/store'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { getActiveRuntimeTarget, type RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
-import { measuredOverlaySlotBoxStyle } from '../tab-group/overlay-slot-geometry'
-import { useOverlaySlotGeometry } from '../tab-group/use-overlay-slot-geometry'
+import { RetainedPaneHost } from '../tab-group/RetainedPaneHost'
 import NativeChatView from './NativeChatView'
 
 type StructuredAgentSessionTab = Tab & {
@@ -36,40 +35,18 @@ const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOv
   target: RuntimeClientTarget
   onFocusOwningGroup: ((groupId: string) => void) | undefined
 }): React.JSX.Element {
-  const overlayRef = useRef<HTMLDivElement | null>(null)
-  const measuredRect = useOverlaySlotGeometry({
-    overlayRef,
-    groupId,
-    worktreeId,
-    isSurfaceLaidOut: isWorktreeActive
-  })
-  const style = useMemo<React.CSSProperties>(
-    () =>
-      groupId
-        ? {
-            ...measuredOverlaySlotBoxStyle(measuredRect),
-            display: isActive ? 'flex' : 'none',
-            pointerEvents: isActive ? 'auto' : 'none'
-          }
-        : { display: 'none' },
-    [groupId, isActive, measuredRect]
+  const measuredGeometry = useMemo(
+    () => ({ worktreeId, isSurfaceLaidOut: isWorktreeActive }),
+    [worktreeId, isWorktreeActive]
   )
-  const focusOwningGroup = useCallback(() => {
-    if (groupId !== undefined && onFocusOwningGroup) {
-      onFocusOwningGroup(groupId)
-    }
-  }, [groupId, onFocusOwningGroup])
 
   return (
-    <div
-      ref={overlayRef}
-      style={style}
-      className="native-chat-pane-shell z-10 min-h-0 min-w-0"
+    <RetainedPaneHost
+      groupId={groupId}
+      isVisible={isActive}
+      measuredGeometry={measuredGeometry}
       data-structured-agent-session-overlay-tab-id={tab.id}
-      data-overlay-geometry="measured"
-      aria-hidden={!isActive}
-      onPointerDown={focusOwningGroup}
-      onFocusCapture={focusOwningGroup}
+      onFocusOwningGroup={onFocusOwningGroup}
     >
       <NativeChatView
         mode="structured"
@@ -81,7 +58,7 @@ const StructuredAgentSessionOverlaySlot = memo(function StructuredAgentSessionOv
         isFocusedGroup={isFocusedGroup}
         target={target}
       />
-    </div>
+    </RetainedPaneHost>
   )
 })
 

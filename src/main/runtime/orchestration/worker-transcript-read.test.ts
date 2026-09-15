@@ -79,6 +79,28 @@ describe('worker transcript reads', () => {
     })
   })
 
+  it('keeps legacy pinned reads inside the archived byte boundary after the file grows', async () => {
+    const original = `${codexMessage('one', 'archived')}\n`
+    await writeFile(transcriptPath, original)
+    const endOffset = Buffer.byteLength(original)
+    await appendFile(transcriptPath, `${codexMessage('two', 'new turn outside the archive')}\n`)
+    const page = await readWorkerTranscript({
+      agent: 'codex',
+      sessionId: 'session-exact',
+      transcriptPath,
+      endOffset
+    })
+    expect(page).toMatchObject({ ok: true, nextOffset: endOffset, messages: [{ id: 'one' }] })
+    const next = await readWorkerTranscript({
+      agent: 'codex',
+      sessionId: 'session-exact',
+      transcriptPath,
+      endOffset,
+      offset: endOffset
+    })
+    expect(next).toMatchObject({ ok: true, nextOffset: endOffset, messages: [] })
+  })
+
   it.each([
     ['equal-size', 0],
     ['larger', 64]

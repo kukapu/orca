@@ -1,6 +1,8 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { SYNC_FIT_PANES_EVENT } from '@/constants/terminal'
 import { tabGroupBodyAnchorName } from './tab-group-body-anchor'
+import { measuredOverlaySlotBoxStyle } from './overlay-slot-geometry'
+import { useOverlaySlotGeometry } from './use-overlay-slot-geometry'
 
 const HAS_CSS_ANCHOR_POSITIONING =
   typeof CSS !== 'undefined' &&
@@ -30,6 +32,7 @@ type RetainedPaneHostProps = {
   isVisible: boolean
   measureWhileHidden?: boolean
   fitTerminal?: boolean
+  measuredGeometry?: { worktreeId: string; isSurfaceLaidOut: boolean }
   onFocusOwningGroup?: (groupId: string) => void
   children: React.ReactNode
   'data-terminal-overlay-tab-id'?: string
@@ -41,17 +44,24 @@ export function RetainedPaneHost({
   isVisible,
   measureWhileHidden = false,
   fitTerminal = false,
+  measuredGeometry,
   onFocusOwningGroup,
   children,
   ...identity
 }: RetainedPaneHostProps): React.JSX.Element {
   const anchorName = groupId !== undefined ? tabGroupBodyAnchorName(groupId) : undefined
   const overlayRef = useRef<HTMLDivElement | null>(null)
+  const measuredRect = useOverlaySlotGeometry({
+    overlayRef,
+    groupId: measuredGeometry ? groupId : undefined,
+    worktreeId: measuredGeometry?.worktreeId,
+    isSurfaceLaidOut: measuredGeometry?.isSurfaceLaidOut ?? false
+  })
   const [measuredFallbackRect, setMeasuredFallbackRect] = useState<MeasuredFallbackRect | null>(
     null
   )
   useLayoutEffect(() => {
-    if (!anchorName || shouldUseCssAnchorPositioning() || !groupId) {
+    if (measuredGeometry || !anchorName || shouldUseCssAnchorPositioning() || !groupId) {
       return
     }
 
@@ -107,7 +117,7 @@ export function RetainedPaneHost({
       resizeObserver.disconnect()
       window.removeEventListener('resize', updateRect)
     }
-  }, [anchorName, groupId, isVisible])
+  }, [anchorName, groupId, isVisible, measuredGeometry])
 
   useLayoutEffect(() => {
     if (!fitTerminal || !isVisible || !anchorName) {
@@ -142,46 +152,61 @@ export function RetainedPaneHost({
       window.clearTimeout(retryId)
       window.clearTimeout(settledRetryId)
     }
-  }, [anchorName, fitTerminal, isVisible, measuredFallbackRect])
+  }, [anchorName, fitTerminal, isVisible, measuredFallbackRect, measuredRect])
 
   const style: React.CSSProperties = useMemo(
     () =>
-      anchorName && shouldUseCssAnchorPositioning()
+      measuredGeometry && groupId
         ? {
-            position: 'absolute',
-            positionAnchor: anchorName,
-            top: `anchor(${anchorName} top)`,
-            left: `anchor(${anchorName} left)`,
-            width: `anchor-size(${anchorName} width)`,
-            height: `anchor-size(${anchorName} height)`,
+            ...measuredOverlaySlotBoxStyle(measuredRect),
             display: isVisible || measureWhileHidden ? 'flex' : 'none',
             opacity: isVisible ? 1 : 0,
             pointerEvents: isVisible ? 'auto' : 'none'
           }
-        : anchorName
+        : anchorName && shouldUseCssAnchorPositioning()
           ? {
-              // Why: Chrome builds without CSS anchor positioning otherwise
-              // mount the terminal into a 0x0 overlay. Measure the tab-group
-              // body so the fallback does not cover the tab strip.
               position: 'absolute',
-              top: measuredFallbackRect?.top ?? 32,
-              left: measuredFallbackRect?.left ?? 0,
-              width: measuredFallbackRect?.width ?? '100%',
-              height: measuredFallbackRect?.height ?? 'calc(100% - 32px)',
+              positionAnchor: anchorName,
+              top: `anchor(${anchorName} top)`,
+              left: `anchor(${anchorName} left)`,
+              width: `anchor-size(${anchorName} width)`,
+              height: `anchor-size(${anchorName} height)`,
               display: isVisible || measureWhileHidden ? 'flex' : 'none',
               opacity: isVisible ? 1 : 0,
               pointerEvents: isVisible ? 'auto' : 'none'
             }
-          : {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: 0,
-              height: 0,
-              display: 'none',
-              pointerEvents: 'none'
-            },
-    [anchorName, isVisible, measuredFallbackRect, measureWhileHidden]
+          : anchorName
+            ? {
+                // Why: Chrome builds without CSS anchor positioning otherwise
+                // mount the terminal into a 0x0 overlay. Measure the tab-group
+                // body so the fallback does not cover the tab strip.
+                position: 'absolute',
+                top: measuredFallbackRect?.top ?? 32,
+                left: measuredFallbackRect?.left ?? 0,
+                width: measuredFallbackRect?.width ?? '100%',
+                height: measuredFallbackRect?.height ?? 'calc(100% - 32px)',
+                display: isVisible || measureWhileHidden ? 'flex' : 'none',
+                opacity: isVisible ? 1 : 0,
+                pointerEvents: isVisible ? 'auto' : 'none'
+              }
+            : {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: 0,
+                height: 0,
+                display: 'none',
+                pointerEvents: 'none'
+              },
+    [
+      anchorName,
+      isVisible,
+      measuredFallbackRect,
+      measureWhileHidden,
+      measuredGeometry,
+      measuredRect,
+      groupId
+    ]
   )
   const focusGroup = useCallback(() => {
     if (groupId !== undefined && onFocusOwningGroup) {
@@ -196,6 +221,7 @@ export function RetainedPaneHost({
       // Pane-local layers cannot compete with app notifications or escape their split rectangle.
       className="isolate z-10 min-h-0 min-w-0 overflow-hidden"
       data-retained-pane-host=""
+      data-overlay-geometry={measuredGeometry ? 'measured' : undefined}
       {...identity}
       inert={!isVisible}
       aria-hidden={!isVisible}

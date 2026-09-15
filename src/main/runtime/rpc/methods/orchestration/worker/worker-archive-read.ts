@@ -21,6 +21,7 @@ import {
 } from '../../../../orchestration/worker-output-cursor'
 import type { WorkerStructuredJournalArchive } from '../../../../orchestration/structured-worker-journal-archive'
 import { readArchivedStructuredJournal } from '../../orchestration-structured-worker-lifecycle'
+import { readLegacyPinnedTranscript } from './worker-legacy-transcript-pin'
 
 const ARCHIVED_TERMINAL_PAGE_LINES = 2_000
 
@@ -63,7 +64,8 @@ export async function readArchivedWorkerOutput(args: {
   db: OrchestrationDb
   dispatchId: string
   workerState: string
-  resource: Pick<WorkerTerminalResourceRow, 'id' | 'terminal_handle' | 'release_state'>
+  resource: Pick<WorkerTerminalResourceRow, 'id' | 'terminal_handle' | 'release_state'> &
+    Partial<Pick<WorkerTerminalResourceRow, 'host_scope'>>
   source?: OrchestrationWorkerReadSource
   cursor?: string | number
   limit?: number
@@ -101,6 +103,10 @@ export async function readArchivedWorkerOutput(args: {
         'archive_unavailable',
         `Dispatch ${args.dispatchId} preserved transcript output only; terminal output was released.`
       )
+    }
+    const content: unknown = JSON.parse(archive.content)
+    if (content && typeof content === 'object' && !('version' in content)) {
+      return readLegacyPinnedTranscript(args, content, archivedStatus(args))
     }
     return readFrozenTranscript(
       args,

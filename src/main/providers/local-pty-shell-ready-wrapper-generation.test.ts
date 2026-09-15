@@ -111,7 +111,8 @@ function runInteractiveBashRcfile(
         ...process.env,
         HOME: tempDir,
         ORCA_SHELL_FEATURES: 'ready',
-        TERM: process.env.TERM || 'xterm'
+        // Keep distro prompt integrations out of the controlled OSC lifecycle fixture.
+        TERM: 'dumb'
       },
       timeout: 5000
     }
